@@ -25,20 +25,37 @@ class DistanceCV(nn.Module):
 
 
 class AngleCV(nn.Module):
-    def __init__(self, idx_a: int, idx_b: int, idx_c: int):
+
+    def __init__(self, indices: torch.Tensor):
         super().__init__()
-        self.idx_a = idx_a
-        self.idx_b = idx_b
-        self.idx_c = idx_c
+        self.indices = indices
 
     def forward(self, positions: torch.Tensor) -> torch.Tensor:
-        v_ba = positions[self.idx_a] - positions[self.idx_b]
-        v_bc = positions[self.idx_c] - positions[self.idx_b]
 
-        norm_ba = torch.sqrt(torch.sum(v_ba ** 2) + EPSILON)
-        norm_bc = torch.sqrt(torch.sum(v_bc ** 2) + EPSILON)
+        # - positions is (N, 3), where N denotes the number of atoms
+        # - self.indices is (M, 3), where M denotes the number of angles to calculate
+        # - positions[self.indices] is a tensor of shape (M, 3, 3), which contains the
+        #     coordinate triplet triplets: [p1_m p2_m p3_m] = [
+        #       [p1_xm p1_ym p1_zm] [p2_xm p2_ym p2_zm] [p3_xm p3_ym p3_zm]
+        #     ],
+        #     where m: 0...M-1.
 
-        cos_theta = torch.sum(v_ba * v_bc) / (norm_ba * norm_bc)
+        triplets = positions[self.indices]
+
+        # Vectorize displacement vectors from the central vertex (index 1 in dim 1)
+        # Both v_ba and v_bc will have a shape of (M, 3)
+        v_ba = triplets[:, 0, :] - triplets[:, 1, :]
+        v_bc = triplets[:, 2, :] - triplets[:, 1, :]
+
+        # Batch reduce norms along the spatial axis (dim=1) -> shape (M,)
+        norm_ba = torch.sqrt(torch.sum(v_ba ** 2, dim=1) + EPSILON)
+        norm_bc = torch.sqrt(torch.sum(v_bc ** 2, dim=1) + EPSILON)
+
+        # Batch dot product via element-wise multiplication and summation -> shape (M,)
+        dot_product = torch.sum(v_ba * v_bc, dim=1)
+        cos_theta = dot_product / (norm_ba * norm_bc)
+
+        # Keep gradients completely safe from NaN anomalies at boundaries
         cos_theta = torch.clamp(cos_theta, -1.0 + EPSILON, 1.0 - EPSILON)
 
         return torch.acos(cos_theta)
