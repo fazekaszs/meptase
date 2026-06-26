@@ -1,3 +1,5 @@
+import math
+
 from abc import ABC, abstractmethod
 
 import torch
@@ -47,14 +49,20 @@ class VonMisesKernel(KernelBase):
 
     def __init__(
         self,
-        concentration: float,
+        width: float,
         period: float = 2 * torch.pi
     ) -> None:
 
         super().__init__()
 
-        self.concentration = concentration
+        self.width = width
         self.period = period
+
+        # The width is the distance between the two extrema of the PDF derivative.
+        # This way, the concentration parameter is given by:
+        # k = cos(w / 2) / (1 - cos(w / 2)^2)
+        cos_half_width = math.cos(width / 2)
+        self._concentration = cos_half_width / (1 - cos_half_width ** 2)
 
     def __call__(self, cv_history: torch.Tensor, current_cv: torch.Tensor) -> torch.Tensor:
 
@@ -64,7 +72,7 @@ class VonMisesKernel(KernelBase):
         diff = torch.where(diff > self.period / 2, self.period - diff, diff)
         scaled_diff = diff * 2 * torch.pi / self.period
 
-        density = torch.exp(self.concentration * (torch.cos(scaled_diff) - 1))
+        density = torch.exp(self._concentration * (torch.cos(scaled_diff) - 1))
         return density
 
 
