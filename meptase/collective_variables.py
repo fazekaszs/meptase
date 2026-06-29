@@ -1,25 +1,58 @@
+from typing import Callable
+from abc import ABC, abstractmethod
+
 import torch
-import torch.nn as nn
+
+
+class CVBase(ABC):
+
+    @abstractmethod
+    def __call__(self, positions: torch.Tensor) -> torch.Tensor:
+        """
+        Maps the Cartesian coordinates of atoms to a vector of collective variables.
+
+        :param positions: Must have a shape of (N_atoms, 3)
+        :return: A vector of collective variables shaped (N_CVs, ), even if a single CV should
+            be returned, in which case the shape should be (1, ).
+        """
+        pass
+
 
 EPSILON = 1E-8
+CV_REGISTRY: dict[str, type[CVBase]] = dict()
 
 
-class MergeCV(nn.Module):
+def _register_cv[T: CVBase](name: str) -> Callable[[type[T], ], type[T]]:
+    """
+    Registers a CV class
+    :param name:
+    :return:
+    """
+
+    def decorator(cls: type[T]) -> type[T]:
+        CV_REGISTRY[name] = cls
+        return cls
+
+    return decorator
+
+
+# We do not register this as a CV, since it should be unavailable in the JSON runfile.
+class MergeCV(CVBase):
     """
     Calculates and merges multiple collective variable vectors through simple concatenation.
     """
 
-    def __init__(self, cv_mappers: list[nn.Module]):
+    def __init__(self, cv_mappers: list[CVBase]):
         super().__init__()
         self.cv_mappers = cv_mappers
 
-    def forward(self, positions: torch.Tensor) -> torch.Tensor:
-
+    def __call__(self, positions: torch.Tensor) -> torch.Tensor:
         cv_list = [mapper(positions) for mapper in self.cv_mappers]
         return torch.concat(cv_list, dim=0)
 
 
-class DistanceCV(nn.Module):
+@_register_cv("distance")
+class DistanceCV(CVBase):
     """
     Calculates the distance between coordinate pairs given by their indices in the coordinate matrix.
     """
@@ -34,7 +67,7 @@ class DistanceCV(nn.Module):
         super().__init__()
         self.indices = indices
 
-    def forward(self, positions: torch.Tensor) -> torch.Tensor:
+    def __call__(self, positions: torch.Tensor) -> torch.Tensor:
 
         # - positions is (N, 3), where N denotes the number of atoms
         # - self.indices is (M, 2), where M denotes the number of distances to calculate
@@ -49,7 +82,8 @@ class DistanceCV(nn.Module):
         return distances
 
 
-class AngleCV(nn.Module):
+@_register_cv("angle")
+class AngleCV(CVBase):
     """
     Calculates the angle between coordinate triplets given by their indices in the coordinate matrix.
     """
@@ -64,7 +98,7 @@ class AngleCV(nn.Module):
         super().__init__()
         self.indices = indices
 
-    def forward(self, positions: torch.Tensor) -> torch.Tensor:
+    def __call__(self, positions: torch.Tensor) -> torch.Tensor:
 
         # - positions is (N, 3), where N denotes the number of atoms
         # - self.indices is (M, 3), where M denotes the number of angles to calculate
@@ -95,7 +129,8 @@ class AngleCV(nn.Module):
         return torch.acos(cos_theta)
 
 
-class DihedralCV(nn.Module):
+@_register_cv("dihedral")
+class DihedralCV(CVBase):
     """
     Calculates the dihedral angle between coordinate quadruplets given by their indices in the coordinate matrix.
     """
@@ -110,7 +145,7 @@ class DihedralCV(nn.Module):
         super().__init__()
         self.indices = indices
 
-    def forward(self, positions: torch.Tensor) -> torch.Tensor:
+    def __call__(self, positions: torch.Tensor) -> torch.Tensor:
 
         # - positions is (N, 3), where N denotes the number of atoms
         # - self.indices is (M, 4), where M denotes the number of angles to calculate
