@@ -11,6 +11,9 @@ class KernelBase(ABC):
     @abstractmethod
     def __call__(self, cv_history: torch.Tensor, current_cv: torch.Tensor) -> torch.Tensor:
         """
+        Maps the current_cv tensor to densities by considering the distance between the
+        elements in said tensor and the elements in the cv_history tensor.
+        The exact mapping is dependent on the shape of the kernel.
 
         :param cv_history: Must have a shape of (N_timesteps, N_CVs)
         :param current_cv: Must have a shape of (N_batches, N_CVs)
