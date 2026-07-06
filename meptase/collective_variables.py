@@ -24,9 +24,11 @@ CV_REGISTRY: dict[str, type[CVBase]] = dict()
 
 def _register_cv[T: CVBase](name: str) -> Callable[[type[T], ], type[T]]:
     """
-    Registers a CV class
-    :param name:
-    :return:
+    Created a decorator that registers a CV class in the CV_REGISTRY dictionary.
+    This will be later used for the deserialization of CVs from the JSON config.
+
+    :param name: The serialized name of the CV.
+    :return: The decorator that registers the CV.
     """
 
     def decorator(cls: type[T]) -> type[T]:
