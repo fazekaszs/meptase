@@ -19,7 +19,7 @@ from tblite.ase import TBLite
 
 from sklearn.decomposition import PCA
 
-from meptase.metadynamics import CollectiveVariableHandler, MetaDynamicsCalculator
+from meptase.metadynamics import MetaDynamics, MetaDynamicsCalculator
 from meptase.kernels import GaussianKernel, BetaKernel
 from meptase.collective_variables import DistanceCV, AngleCV
 from meptase.additional_potentials import FlatBottomedHarmonic
@@ -128,12 +128,12 @@ def main():
         [atom1_idx, atom2_idx, atom3_idx],
     ], dtype=torch.int))
     additional_potential = FlatBottomedHarmonic(
-        cv_idx=0,
+        indices=torch.tensor([0, ], dtype=torch.int),
         cv_min=10. * torch.pi / 180.,
         cv_max=170. * torch.pi / 180.,
-        force_constant=500.  # Hartree / rad^2
+        force_constant=500.  # eV / rad^2
     )
-    cv_handler = CollectiveVariableHandler(
+    cv_handler = MetaDynamics(
         mapper=selected_cv,
         additional_potential=additional_potential,
         kernels=[BetaKernel(5. * torch.pi / 180.), ],
@@ -167,7 +167,7 @@ def main():
         ax[0].cla()
         ax[0].plot(energies)
         ax[0].set_xlabel("frame number")
-        ax[0].set_ylabel("energy / Hartree")
+        ax[0].set_ylabel("energy / eV")
 
         ax[1].cla()
         ax[1].plot(cv_handler.history.numpy())
@@ -187,7 +187,7 @@ def main():
             cv_step=0.05
         ))
         ax[3].set_xlabel("collective variable / Angstrom")
-        ax[3].set_ylabel("bias potential / Hartree")
+        ax[3].set_ylabel("bias potential / eV")
 
         traj_buffer = ase_read("output.traj", index=":")
         ase_write("output.xyz", traj_buffer)

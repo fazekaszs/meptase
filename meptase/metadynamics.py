@@ -12,7 +12,7 @@ from .exceptions import InvalidShapeException, UnusedKernelException, InvalidPar
 type CVMapper = Callable[[torch.Tensor, ], torch.Tensor]
 
 
-class CollectiveVariableHandler:
+class MetaDynamics:
 
     def __init__(
         self,
@@ -114,7 +114,7 @@ class CollectiveVariableHandler:
         # After the control blocks current_cv is guaranteed to be not None
         # and has to have a shape of (N_batches, N_CVs)!
         # The additional potential is calculated for all batches, resulting in a shape of (N_batches, ).
-        additional_potential = torch.vmap(self.run_additional_potential)(current_cv)
+        additional_potential = self.run_additional_potential(current_cv)
 
         # History existence check.
         if self.history is not None:
@@ -159,7 +159,7 @@ class MetaDynamicsCalculator(Calculator):
     def __init__(
         self,
         unbiased_calculator: Calculator,
-        cv_handler: CollectiveVariableHandler,
+        cv_handler: MetaDynamics,
         atoms: ase.Atoms | None = None,
         **kwargs
     ) -> None:
