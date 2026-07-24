@@ -31,25 +31,6 @@ class MetaDynamicsEngine:
 
         self.history: None | torch.Tensor = None
 
-    def run_additional_potential(self, current_cv: torch.Tensor) -> torch.Tensor:
-
-        additional_potential = self.additional_potential(current_cv)
-
-        # No fancy tensor shapes allowed, only vectors! Size: (N_batches, )
-
-        # First case: the function returns the bias potential itself
-        if len(additional_potential.shape) == 0:
-            return additional_potential
-        # Second case: the function returns one bias potential per CV dimension
-        elif additional_potential.shape == current_cv.shape:
-            return torch.sum(additional_potential)
-        # Every other case should return an error
-        else:
-            raise InvalidShapeException(
-                f"The returned additional potential tensor is of invalid shape {additional_potential.shape}! "
-                f"The shape of it should either be an empty tuple or {current_cv.shape}!"
-            )
-
     def deposit_hill(self, coordinates: torch.Tensor) -> None:
 
         current_cv = self.mapper(coordinates)
@@ -104,7 +85,7 @@ class MetaDynamicsEngine:
         # and has to have a shape of (N_batches, N_CVs)!
 
         # The additional potential is calculated for all batches, resulting in a shape of (N_batches, ).
-        additional_potential = self.run_additional_potential(current_cv)
+        additional_potential = torch.vmap(self.additional_potential)(current_cv)
 
         # History existence check.
         if self.history is not None:
@@ -135,7 +116,11 @@ class MetaDynamicsEngine:
         if coordinates is None:
             forces = None
         else:
-            forces = -1. * torch.autograd.grad(total_potential, coordinates, create_graph=True)[0]
+            forces = -1. * torch.autograd.grad(
+                outputs=total_potential,
+                inputs=coordinates,
+                grad_outputs=torch.ones_like(total_potential)
+            )[0]
 
         return total_potential, forces
 

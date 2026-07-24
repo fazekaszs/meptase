@@ -32,7 +32,7 @@ class CVBase(ABC):
         if len(current_cv.shape) != 1:
             raise InvalidShapeException(
                 f"The run method of the collective variable should return a current_cv tensor "
-                f"with a shape of either (N_CVs, )! "
+                f"with a shape of (N_CVs, )! "
                 f"Instead, it has a shape of {current_cv.shape}!"
             )
 
