@@ -19,7 +19,7 @@ from tblite.ase import TBLite
 
 from sklearn.decomposition import PCA
 
-from meptase.metadynamics import MetaDynamics, MetaDynamicsCalculator
+from meptase.metadynamics import MetaDynamicsEngine, MetaDynamicsCalculator
 from meptase.kernels import GaussianKernel, BetaKernel
 from meptase.collective_variables import DistanceCV, AngleCV
 from meptase.additional_potentials import FlatBottomedHarmonic
@@ -133,7 +133,7 @@ def main():
         cv_max=170. * torch.pi / 180.,
         force_constant=500.  # eV / rad^2
     )
-    cv_handler = MetaDynamics(
+    engine = MetaDynamicsEngine(
         mapper=selected_cv,
         additional_potential=additional_potential,
         kernels=[BetaKernel(5. * torch.pi / 180.), ],
@@ -142,7 +142,7 @@ def main():
     )
     ase_mol.calc = MetaDynamicsCalculator(
         unbiased_calculator=unbiased_calculator,
-        cv_handler=cv_handler
+        engine=engine
     )
 
     ase_mol.set_constraint(constraint_xh_bonds(ase_mol, rdkit_mol))
@@ -170,7 +170,7 @@ def main():
         ax[0].set_ylabel("energy / eV")
 
         ax[1].cla()
-        ax[1].plot(cv_handler.history.numpy())
+        ax[1].plot(engine.history.numpy())
         ax[1].set_xlabel("frame number")
         ax[1].set_ylabel("collective variable / Angstrom")
 
@@ -178,14 +178,10 @@ def main():
         draw_molecule(ax[2], ase_mol, rdkit_mol)
         ax[2].axis("off")
 
+        fes_domain, fes_values = ase_mol.calc.get_fes()
+
         ax[3].cla()
-        ax[3].plot(*ase_mol.calc.get_fes(
-            cv_base=torch.tensor([0., ]),
-            cv_idx=0,
-            cv_min=0.,
-            cv_max=np.pi + 0.05,
-            cv_step=0.05
-        ))
+        ax[3].scatter(fes_domain[:, 0], fes_values)
         ax[3].set_xlabel("collective variable / Angstrom")
         ax[3].set_ylabel("bias potential / eV")
 

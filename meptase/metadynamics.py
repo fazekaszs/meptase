@@ -12,7 +12,7 @@ from .exceptions import InvalidShapeException, UnusedKernelException, InvalidPar
 type CVMapper = Callable[[torch.Tensor, ], torch.Tensor]
 
 
-class MetaDynamics:
+class MetaDynamicsEngine:
 
     def __init__(
         self,
@@ -31,22 +31,11 @@ class MetaDynamics:
 
         self.history: None | torch.Tensor = None
 
-    def run_mapper(self, coordinates: torch.Tensor) -> torch.Tensor:
-
-        current_cv = self.mapper(coordinates)
-
-        # No fancy tensor shapes allowed, only vectors!
-        if len(current_cv.shape) != 1:
-            raise InvalidShapeException(
-                f"The collective variable mapper should return a single axis array "
-                f"(i.e. a vector). Instead, it returned a tensor with shape {current_cv.shape}!"
-            )
-
-        return current_cv
-
     def run_additional_potential(self, current_cv: torch.Tensor) -> torch.Tensor:
 
         additional_potential = self.additional_potential(current_cv)
+
+        # No fancy tensor shapes allowed, only vectors! Size: (N_batches, )
 
         # First case: the function returns the bias potential itself
         if len(additional_potential.shape) == 0:
@@ -63,7 +52,7 @@ class MetaDynamics:
 
     def deposit_hill(self, coordinates: torch.Tensor) -> None:
 
-        current_cv = self.run_mapper(coordinates)
+        current_cv = self.mapper(coordinates)
 
         if self.history is None:
             self.history = current_cv[None, :]
@@ -90,7 +79,7 @@ class MetaDynamics:
                     f"(N_batches, N_atoms, 3)! Got a shape of {coordinates.shape}."
                 )
 
-            current_cv = torch.vmap(self.run_mapper)(coordinates)
+            current_cv = torch.vmap(self.mapper)(coordinates)
 
         # The current_cv argument is given, while coordinates is not set:
         elif coordinates is None and current_cv is not None:
@@ -113,6 +102,7 @@ class MetaDynamics:
 
         # After the control blocks current_cv is guaranteed to be not None
         # and has to have a shape of (N_batches, N_CVs)!
+
         # The additional potential is calculated for all batches, resulting in a shape of (N_batches, ).
         additional_potential = self.run_additional_potential(current_cv)
 
@@ -159,7 +149,7 @@ class MetaDynamicsCalculator(Calculator):
     def __init__(
         self,
         unbiased_calculator: Calculator,
-        cv_handler: MetaDynamics,
+        engine: MetaDynamicsEngine,
         atoms: ase.Atoms | None = None,
         **kwargs
     ) -> None:
@@ -167,7 +157,10 @@ class MetaDynamicsCalculator(Calculator):
         super().__init__(atoms=atoms, **kwargs)
 
         self.unbiased_calculator = unbiased_calculator
-        self.cv_handler = cv_handler
+        self.engine = engine
+
+    def set_atoms(self, atoms: ase.Atoms) -> None:
+        self.unbiased_calculator.atoms = atoms
 
     def calculate(
         self,
@@ -189,7 +182,7 @@ class MetaDynamicsCalculator(Calculator):
             device="cpu"
         )
 
-        bias_potential, bias_forces = self.cv_handler.get_energies_and_forces(atom_positions)
+        bias_potential, bias_forces = self.engine.get_energies_and_forces(atom_positions)
 
         self.results["bias_potential"] = float(bias_potential[0].detach().item())
         self.results["energy"] += self.results["bias_potential"]
@@ -204,30 +197,16 @@ class MetaDynamicsCalculator(Calculator):
 
         positions_np = atoms.get_positions()
         atom_positions = torch.tensor(positions_np, dtype=torch.float32)
-        self.cv_handler.deposit_hill(atom_positions)
+        self.engine.deposit_hill(atom_positions)
 
-        current_cv = self.cv_handler.history[-1].numpy()
-        print(f"Deposited Gaussian hill at CV = {current_cv}. Total hills: {len(self.cv_handler.history)}")
+        current_cv = self.engine.history[-1].numpy()
+        print(f"Deposited Gaussian hill at CV = {current_cv}. Total hills: {len(self.engine.history)}")
 
-    def get_fes(
-        self,
-        cv_base: torch.Tensor,
-        cv_idx: int,
-        cv_min: float,
-        cv_max: float,
-        cv_step: float
-    ):
+    def get_fes(self):
 
-        selected_cv_domain = torch.arange(cv_min, cv_max, cv_step, dtype=torch.float32)
-        full_cv_domain = torch.broadcast_to(
-            cv_base[None],
-            (len(selected_cv_domain), cv_base.shape[0])
-        ).clone()
-        full_cv_domain[:, cv_idx] = selected_cv_domain
-
-        total_potential, _ = self.cv_handler.get_energies_and_forces(
-            coordinates=None,
-            current_cv=full_cv_domain
+        fes_domain = self.engine.history
+        fes_values, _ = self.engine.get_energies_and_forces(
+            coordinates=None, current_cv=fes_domain
         )
 
-        return selected_cv_domain.numpy(), total_potential.detach().cpu().numpy()
+        return fes_domain.numpy(), fes_values.detach().cpu().numpy()

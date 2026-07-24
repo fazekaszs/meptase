@@ -3,19 +3,44 @@ from abc import ABC, abstractmethod
 
 import torch
 
+from .exceptions import InvalidShapeException
+
 
 class CVBase(ABC):
 
     @abstractmethod
-    def __call__(self, positions: torch.Tensor) -> torch.Tensor:
+    def run(self, positions: torch.Tensor) -> torch.Tensor:
         """
         Maps the Cartesian coordinates of atoms to a vector of collective variables.
 
-        :param positions: Must have a shape of (N_atoms, 3)
-        :return: A vector of collective variables shaped (N_CVs, ), even if a single CV should
-            be returned, in which case the shape should be (1, ).
+        :param positions: Positions of the atoms. Must have a shape of (N_atoms, 3).
+        :return: A vector of collective variables shaped (N_CVs, ). If a single CV is
+            needed, then the shape should be (1, ).
         """
         pass
+
+    @staticmethod
+    def _check_positions_shape(positions: torch.Tensor) -> None:
+        if len(positions.shape) != 2 or positions.shape[-1] != 3:
+            raise InvalidShapeException(
+                f"The positions should have a shape of (N_positions, 3)! "
+                f"Instead, it has a shape of {positions.shape}!"
+            )
+
+    @staticmethod
+    def _check_current_cv_shape(current_cv: torch.Tensor) -> None:
+        if len(current_cv.shape) != 1:
+            raise InvalidShapeException(
+                f"The run method of the collective variable should return a current_cv tensor "
+                f"with a shape of either (N_CVs, )! "
+                f"Instead, it has a shape of {current_cv.shape}!"
+            )
+
+    def __call__(self, positions: torch.Tensor) -> torch.Tensor:
+        self._check_positions_shape(positions)
+        current_cv = self.run(positions)
+        self._check_current_cv_shape(current_cv)
+        return current_cv
 
 
 EPSILON = 1E-8
@@ -48,7 +73,7 @@ class MergeCV(CVBase):
         super().__init__()
         self.cv_mappers = cv_mappers
 
-    def __call__(self, positions: torch.Tensor) -> torch.Tensor:
+    def run(self, positions: torch.Tensor) -> torch.Tensor:
         cv_list = [mapper(positions) for mapper in self.cv_mappers]
         return torch.concat(cv_list, dim=0)
 
@@ -69,7 +94,7 @@ class DistanceCV(CVBase):
         super().__init__()
         self.indices = indices
 
-    def __call__(self, positions: torch.Tensor) -> torch.Tensor:
+    def run(self, positions: torch.Tensor) -> torch.Tensor:
 
         # - positions is (N, 3), where N denotes the number of atoms
         # - self.indices is (M, 2), where M denotes the number of distances to calculate
@@ -100,7 +125,7 @@ class AngleCV(CVBase):
         super().__init__()
         self.indices = indices
 
-    def __call__(self, positions: torch.Tensor) -> torch.Tensor:
+    def run(self, positions: torch.Tensor) -> torch.Tensor:
 
         # - positions is (N, 3), where N denotes the number of atoms
         # - self.indices is (M, 3), where M denotes the number of angles to calculate
@@ -147,7 +172,7 @@ class DihedralCV(CVBase):
         super().__init__()
         self.indices = indices
 
-    def __call__(self, positions: torch.Tensor) -> torch.Tensor:
+    def run(self, positions: torch.Tensor) -> torch.Tensor:
 
         # - positions is (N, 3), where N denotes the number of atoms
         # - self.indices is (M, 4), where M denotes the number of angles to calculate
@@ -181,5 +206,5 @@ class DihedralCV(CVBase):
         m1 = torch.linalg.cross(n1, b2_norm)
         y = torch.sum(m1 * n2, dim=1)
 
-        # Batch evaluation of atan2 returns (M,) array containing full periodic values
+        # Batch evaluation of atan2 returns (M, ) array containing full periodic values
         return torch.atan2(y, x)
