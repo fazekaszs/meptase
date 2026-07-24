@@ -9,7 +9,7 @@ from .exceptions import InvalidShapeException
 class KernelBase(ABC):
 
     @abstractmethod
-    def __call__(self, cv_history: torch.Tensor, current_cv: torch.Tensor) -> torch.Tensor:
+    def run(self, cv_history: torch.Tensor, current_cv: torch.Tensor) -> torch.Tensor:
         """
         Maps the current_cv tensor to densities by considering the distance between the
         elements in said tensor and the elements in the cv_history tensor.
@@ -21,16 +21,35 @@ class KernelBase(ABC):
         """
         pass
 
+    @staticmethod
+    def _check_input_shapes(cv_history: torch.Tensor, current_cv: torch.Tensor) -> None:
+        if cv_history.shape[1] != current_cv.shape[1]:
+            raise InvalidShapeException(
+                f"The parameter cv_history should be have a shape of (N_timesteps, N_CVs), "
+                f"and current_cv should be of (N_batches, N_CVs), "
+                f"i.e. the second axis sizes should match! "
+                f"The run method was called with shapes {cv_history.shape} and {current_cv.shape}, respectively."
+            )
 
-def validate_shapes(cv_history: torch.Tensor, current_cv: torch.Tensor) -> None:
+    @staticmethod
+    def _check_density_shape(
+        cv_history: torch.Tensor,
+        current_cv: torch.Tensor,
+        density: torch.Tensor
+    ) -> None:
+        if (current_cv.shape[0], *cv_history.shape) != density.shape:
+            raise InvalidShapeException(
+                f"The output of the run method should return a density tensor with a shape of "
+                f"(N_batches, N_timesteps, N_CVs), which should be aligned with the inputted shapes "
+                f"of the cv_history {cv_history.shape} and current_cv {current_cv.shape} tensors. "
+                f"Instead, the method outputted a tensor with a shape of {density.shape}!"
+            )
 
-    if cv_history.shape[1] != current_cv.shape[1]:
-        raise InvalidShapeException(
-            "The parameter cv_history should be have a shape of (n_timesteps, n_CVs), "
-            "and current_cv should be of (n_samples, n_CVs), "
-            f"i.e. the second axis sizes should match! "
-            f"I got shapes {cv_history.shape} and {current_cv.shape}, respectively."
-        )
+    def __call__(self, cv_history: torch.Tensor, current_cv: torch.Tensor) -> torch.Tensor:
+        self._check_input_shapes(cv_history, current_cv)
+        density = self.run(cv_history, current_cv)
+        self._check_density_shape(cv_history, current_cv, density)
+        return density
 
 
 class GaussianKernel(KernelBase):
@@ -38,9 +57,7 @@ class GaussianKernel(KernelBase):
     def __init__(self, gaussian_width: float | torch.Tensor) -> None:
         self.gaussian_width = gaussian_width
 
-    def __call__(self, cv_history: torch.Tensor, current_cv: torch.Tensor) -> torch.Tensor:
-
-        validate_shapes(cv_history, current_cv)
+    def run(self, cv_history: torch.Tensor, current_cv: torch.Tensor) -> torch.Tensor:
 
         density = torch.exp(
             - 0.5 * ((cv_history[None, :, :] - current_cv[:, None, :]) / self.gaussian_width) ** 2
@@ -67,9 +84,7 @@ class VonMisesKernel(KernelBase):
         cos_half_width = math.cos(width / 2)
         self._concentration = cos_half_width / (1 - cos_half_width ** 2)
 
-    def __call__(self, cv_history: torch.Tensor, current_cv: torch.Tensor) -> torch.Tensor:
-
-        validate_shapes(cv_history, current_cv)
+    def run(self, cv_history: torch.Tensor, current_cv: torch.Tensor) -> torch.Tensor:
 
         diff = torch.abs(cv_history[None, :, :] - current_cv[:, None, :])
         diff = torch.where(diff > self.period / 2, self.period - diff, diff)
@@ -94,9 +109,7 @@ class BetaKernel(KernelBase):
 
         self._reduced_width = self.width / self.domain
 
-    def __call__(self, cv_history: torch.Tensor, current_cv: torch.Tensor) -> torch.Tensor:
-
-        validate_shapes(cv_history, current_cv)
+    def run(self, cv_history: torch.Tensor, current_cv: torch.Tensor) -> torch.Tensor:
 
         # reduced variables:
         # since cv_history and current_cv contains values between [0, self.domain],
