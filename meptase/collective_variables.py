@@ -1,9 +1,9 @@
-from typing import Callable
+from typing import Callable, Self
 from abc import ABC, abstractmethod
 
 import torch
 
-from .exceptions import InvalidShapeException
+from .exceptions import InvalidShapeException, DeserializationException
 
 
 class CVBase(ABC):
@@ -43,11 +43,46 @@ class CVBase(ABC):
         return current_cv
 
 
+class DeserializableCV(CVBase, ABC):
+
+    @classmethod
+    def from_config[T: CVBase](
+        cls: type[T],
+        index_mapper: dict[int, int] | None = None,
+        **kwargs
+    ) -> T:
+        """
+        Preprocesses the deserialized arguments to comply with the collective variable's
+        constructor signature and with other requirements.
+
+        :param index_mapper: Preprocesses the "indices" argument through index mapping. This is usually
+            needed to convert AtomMapNum values of an RDKit Atom object to the index of that same atom
+            in an ASE Atoms object. For example, the SMILES code "C[C:2]C(=[O:4])C[N:1]" must have an
+            index_mapper of {2: 1, 4: 3, 1: 5}, because the marked atoms are at indices 1, 3 and 5.
+        :param kwargs: The keyword arguments needed to be preprocessed.
+        :return: A deserialized collective variable instance.
+        """
+
+        if index_mapper is not None:
+
+            if "indices" not in kwargs:
+                raise DeserializationException(
+                    f"The indices argument is necessary if the index_mapper is given!"
+                )
+
+            kwargs["indices"] = torch.tensor([
+                [index_mapper[x] for x in idx_line]
+                for idx_line in kwargs["indices"]
+            ], dtype=torch.long)
+
+        return cls(**kwargs)
+
+
 EPSILON = 1E-8
-CV_REGISTRY: dict[str, type[CVBase]] = dict()
+CV_REGISTRY: dict[str, type[DeserializableCV]] = dict()
 
 
-def _register_cv[T: CVBase](name: str) -> Callable[[type[T], ], type[T]]:
+def _register_cv[T: DeserializableCV](name: str) -> Callable[[type[T], ], type[T]]:
     """
     Created a decorator that registers a CV class in the CV_REGISTRY dictionary.
     This will be later used for the deserialization of CVs from the JSON config.
@@ -79,7 +114,7 @@ class MergeCV(CVBase):
 
 
 @_register_cv("distance")
-class DistanceCV(CVBase):
+class DistanceCV(DeserializableCV):
     """
     Calculates the distance between coordinate pairs given by their indices in the coordinate matrix.
     """
@@ -110,7 +145,7 @@ class DistanceCV(CVBase):
 
 
 @_register_cv("angle")
-class AngleCV(CVBase):
+class AngleCV(DeserializableCV):
     """
     Calculates the angle between coordinate triplets given by their indices in the coordinate matrix.
     """
@@ -157,7 +192,7 @@ class AngleCV(CVBase):
 
 
 @_register_cv("dihedral")
-class DihedralCV(CVBase):
+class DihedralCV(DeserializableCV):
     """
     Calculates the dihedral angle between coordinate quadruplets given by their indices in the coordinate matrix.
     """

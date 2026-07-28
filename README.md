@@ -14,8 +14,8 @@ ASE calculator, providing flexibility) additional bias forces are computed
 from the negative gradient of the bias potential and these are added to the
 calculator-provided (unbiased) forces.
 Since I opted for high flexibility and simplicity with this package, the
-bias potential and its negative gradient is calculated using PyTorch,
+bias potential and its negative gradient are calculated using PyTorch,
 which provides convenient autograd functionalities.
 I implemented some basic CVs (e.g. distances, angles, dihedral angles),
-some basic kernels (e.g. Gaussian kernel, von Mises kernel), and even
-some additional potentials (e.g. flat-bottomed harmonic walls).
+some basic kernels (e.g. Gaussian kernel, von Mises kernel, Beta kernel), 
+and even some additional potentials (e.g. flat-bottomed harmonic walls).

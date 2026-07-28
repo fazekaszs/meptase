@@ -1,3 +1,11 @@
+class DeserializationException(Exception):
+    pass
+
+
+class InvalidCVNameException(Exception):
+    pass
+
+
 class InvalidShapeException(Exception):
     pass
 
