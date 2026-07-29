@@ -1,12 +1,15 @@
-from typing import Callable, Self
+from typing import Callable
 from abc import ABC, abstractmethod
 
 import torch
 
-from .exceptions import InvalidShapeException, DeserializationException
+from .exceptions import InvalidShapeException, DeserializationException, InvalidCVNameException
 
 
 class CVBase(ABC):
+
+    def __init__(self, name: str):
+        self.name = name
 
     @abstractmethod
     def run(self, positions: torch.Tensor) -> torch.Tensor:
@@ -41,6 +44,30 @@ class CVBase(ABC):
         current_cv = self.run(positions)
         self._check_current_cv_shape(current_cv)
         return current_cv
+
+    @property
+    def name(self) -> str:
+        """
+        :return: The name of the collective variable.
+        """
+        return self._name
+
+    @name.setter
+    def name(self, new_name: str) -> None:
+
+        if "." in new_name:
+            raise InvalidCVNameException(
+                f"The name of the collective variable \"{new_name}\" cannot contain the dot character!"
+            )
+        self._name = new_name
+
+    @abstractmethod
+    def __len__(self) -> int:
+        """
+        :return: The dimension of the collective variable, i.e. if calling the CV object
+            returns N distinct numbers, then it returns N.
+        """
+        pass
 
 
 class DeserializableCV(CVBase, ABC):
@@ -104,9 +131,24 @@ class MergeCV(CVBase):
     Calculates and merges multiple collective variable vectors through simple concatenation.
     """
 
-    def __init__(self, cv_mappers: list[CVBase]):
-        super().__init__()
+    def __init__(self, name: str, cv_mappers: list[CVBase]):
+
+        super().__init__(name)
         self.cv_mappers = cv_mappers
+
+        all_names = sum(
+            [[f"{cv.name}.{idx + 1}" for idx in range(len(cv))] for cv in self.cv_mappers],
+            start=list()
+        )
+        if len(all_names) != len(set(all_names)):
+            raise InvalidCVNameException(
+                f"At least two CV names collide with each other! "
+                f"The CV names are {', '.join(all_names)}"
+            )
+        self.names_to_idx = {name: idx for idx, name in enumerate(all_names)}
+
+    def __len__(self):
+        return sum(len(cv) for cv in self.cv_mappers)
 
     def run(self, positions: torch.Tensor) -> torch.Tensor:
         cv_list = [mapper(positions) for mapper in self.cv_mappers]
@@ -119,15 +161,18 @@ class DistanceCV(DeserializableCV):
     Calculates the distance between coordinate pairs given by their indices in the coordinate matrix.
     """
 
-    def __init__(self, indices: torch.Tensor):
+    def __init__(self, name: str, indices: torch.Tensor):
         """
         Class constructor.
 
         :param indices: An indexing tensor containing integers that has a shape of (M, 2), where
             M is the number of distances to be calculated.
         """
-        super().__init__()
+        super().__init__(name)
         self.indices = indices
+
+    def __len__(self):
+        return self.indices.shape[0]
 
     def run(self, positions: torch.Tensor) -> torch.Tensor:
 
@@ -150,15 +195,18 @@ class AngleCV(DeserializableCV):
     Calculates the angle between coordinate triplets given by their indices in the coordinate matrix.
     """
 
-    def __init__(self, indices: torch.Tensor):
+    def __init__(self, name: str, indices: torch.Tensor):
         """
         Class constructor.
 
         :param indices: An indexing tensor containing integers that has a shape of (M, 3), where
             M is the number of angles to be calculated.
         """
-        super().__init__()
+        super().__init__(name)
         self.indices = indices
+
+    def __len__(self):
+        return self.indices.shape[0]
 
     def run(self, positions: torch.Tensor) -> torch.Tensor:
 
@@ -197,15 +245,18 @@ class DihedralCV(DeserializableCV):
     Calculates the dihedral angle between coordinate quadruplets given by their indices in the coordinate matrix.
     """
 
-    def __init__(self, indices: torch.Tensor):
+    def __init__(self, name: str, indices: torch.Tensor):
         """
         Class constructor.
 
         :param indices: An indexing tensor containing integers that has a shape of (M, 4), where
             M is the number of dihedral angles to be calculated.
         """
-        super().__init__()
+        super().__init__(name)
         self.indices = indices
+
+    def __len__(self):
+        return self.indices.shape[0]
 
     def run(self, positions: torch.Tensor) -> torch.Tensor:
 

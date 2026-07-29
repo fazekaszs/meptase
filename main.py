@@ -1,9 +1,9 @@
 import matplotlib.pyplot as plt
 
 import numpy as np
+import torch
 
 import ase
-import torch
 from ase import units
 from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
 from ase.md.langevin import Langevin
@@ -124,9 +124,10 @@ def main():
         accuracy=1.0,
         verbosity=0
     )
-    selected_cv = AngleCV(torch.tensor([
-        [atom1_idx, atom2_idx, atom3_idx],
-    ], dtype=torch.int))
+    selected_cv = AngleCV(
+        name="theta",
+        indices=torch.tensor([[atom1_idx, atom2_idx, atom3_idx], ], dtype=torch.int)
+    )
     additional_potential = FlatBottomedHarmonic(
         indices=torch.tensor([0, ], dtype=torch.int),
         cv_min=10. * torch.pi / 180.,

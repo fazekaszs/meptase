@@ -2,6 +2,10 @@ class DeserializationException(Exception):
     pass
 
 
+class InvalidCVTypeException(Exception):
+    pass
+
+
 class InvalidCVNameException(Exception):
     pass
 
