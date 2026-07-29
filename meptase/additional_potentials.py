@@ -5,6 +5,7 @@ import torch
 
 from .exceptions import InvalidShapeException
 
+
 class PotentialEnergyFunction(ABC):
 
     @abstractmethod
@@ -41,10 +42,46 @@ class PotentialEnergyFunction(ABC):
         return potential_energy
 
 
-PEF_REGISTRY: dict[str, type[PotentialEnergyFunction]] = dict()
+class DeserializablePEF(PotentialEnergyFunction, ABC):
+
+    @classmethod
+    def from_config[T: PotentialEnergyFunction](
+        cls: type[T],
+        names_to_idx: dict[str, int] | None = None,
+        cv_names: list[str] | None = None,
+        **kwargs
+    ) -> T:
+        if names_to_idx is not None and cv_names is not None:
+            kwargs["indices"] = torch.tensor(
+                [names_to_idx[name] for name in cv_names],
+                dtype=torch.long
+            )
+        elif "indices" in kwargs:
+            kwargs["indices"] = torch.tensor(kwargs["indices"], dtype=torch.long)
+        return cls(**kwargs)
 
 
-def _register_potential[T: PotentialEnergyFunction](name: str) -> Callable[[type[T], ], type[T]]:
+# We do not register this as a PEF, since it should be unavailable in the JSON runfile.
+class MergedPEF(PotentialEnergyFunction):
+    """
+    Adds the results of multiple potential energy functions.
+    """
+
+    def __init__(self, potential_energy_functions: list[PotentialEnergyFunction]):
+        super().__init__()
+        self.potential_energy_functions = potential_energy_functions
+
+    def run(self, current_cv: torch.Tensor) -> torch.Tensor:
+        return sum(
+            (pef(current_cv) for pef in self.potential_energy_functions),
+            start=torch.zeros(tuple())
+        )
+
+
+PEF_REGISTRY: dict[str, type[DeserializablePEF]] = dict()
+
+
+def _register_potential[T: DeserializablePEF](name: str) -> Callable[[type[T], ], type[T]]:
     """
     Created a decorator that registers a PotentialEnergyFunction (PEF) class in the PEF_REGISTRY dictionary.
     This will be later used for the deserialization of PEFs from the JSON config.
@@ -61,7 +98,7 @@ def _register_potential[T: PotentialEnergyFunction](name: str) -> Callable[[type
 
 
 @_register_potential("lower_harmonic_wall")
-class LowerHarmonicWall(PotentialEnergyFunction):
+class LowerHarmonicWall(DeserializablePEF):
 
     def __init__(
         self,
@@ -86,7 +123,7 @@ class LowerHarmonicWall(PotentialEnergyFunction):
 
 
 @_register_potential("upper_harmonic_wall")
-class UpperHarmonicWall(PotentialEnergyFunction):
+class UpperHarmonicWall(DeserializablePEF):
 
     def __init__(
         self,
@@ -111,7 +148,7 @@ class UpperHarmonicWall(PotentialEnergyFunction):
 
 
 @_register_potential("flat_bottomed_harmonic_wall")
-class FlatBottomedHarmonic(PotentialEnergyFunction):
+class FlatBottomedHarmonic(DeserializablePEF):
 
     def __init__(
         self,

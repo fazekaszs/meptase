@@ -2,7 +2,7 @@ class DeserializationException(Exception):
     pass
 
 
-class InvalidCVTypeException(Exception):
+class InvalidTypeSelectionException(Exception):
     pass
 
 

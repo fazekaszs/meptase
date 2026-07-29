@@ -1,0 +1,36 @@
+{
+  "output_dir": "test_project",
+  "unbiased_calculator": {
+    "name": "TBLite",
+    "max_iterations": 1000,
+    "accuracy": 1.0,
+    "verbosity": 0
+  },
+  "molecule_smiles": "[CH3:1]CC[CH2:2]CC[CH2:3]CC[CH3:4]",
+  "collective_variables": [
+    {
+      "type": "distance",
+      "parameters": { "name": "d", "indices": [[1, 2], [2, 3]] }
+    },
+    {
+      "type": "angle",
+      "parameters": { "name": "alpha", "indices": [[1, 2, 3], [2, 3, 4]] }
+    },
+    {
+      "type": "dihedral",
+      "parameters": { "name": "theta", "indices": [[1, 2, 3, 4]] }
+    }
+  ],
+  "additional_potentials": [
+    {
+      "type": "flat_bottomed_harmonic_wall",
+      "target_cvs": ["d.1", "d.2"],
+      "parameters": { "cv_min": 4.0, "cv_max": 6.0, "force_constant": 5.0 }
+    },
+    {
+      "type": "upper_harmonic_wall",
+      "target_cvs": ["alpha.1"],
+      "parameters": { "cv_max": 2.0, "force_constant": 10.0 }
+    }
+  ]
+}
