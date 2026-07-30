@@ -10,14 +10,19 @@ from rdkit.Chem import AllChem, Draw
 import ase
 
 import torch
+from tblite.ase import TBLite
 
+from .exceptions import (
+    InvalidTypeSelectionException, DeserializationException
+)
 from .collective_variables import (
     MergeCV, CV_REGISTRY, DeserializableCV
 )
 from .additional_potentials import (
-    PEF_REGISTRY, DeserializablePEF, PotentialEnergyFunction, MergedPEF
+    PEF_REGISTRY, DeserializablePEF, MergedPEF
 )
-from .exceptions import InvalidTypeSelectionException
+from .kernels import KERNEL_REGISTRY
+from .metadynamics import MetaDynamicsEngine, MetaDynamicsCalculator
 
 
 def parse_arguments() -> Namespace:
@@ -209,6 +214,54 @@ def main():
 
     # Merge the PEFs to a single PEF
     merged_pef = MergedPEF(all_additional_potentials)
+
+    # Deserialize and collect the kernels from the JSON file
+    all_kernels = list()
+    kernel_target_cv_indices: list[int | None] = [None for _ in merged_cvs.names_to_idx]
+    for kernel_idx, kernel_dict in enumerate(input_file_content["kernels"]):
+
+        kernel_type = kernel_dict["type"]
+        if kernel_type not in KERNEL_REGISTRY:
+            raise InvalidTypeSelectionException(
+                f"The kernel type {kernel_type} is not registered!"
+            )
+
+        current_target_cv_names = kernel_dict["target_cvs"]
+        for cv_name in current_target_cv_names:
+            cv_idx = merged_cvs.names_to_idx[cv_name]
+            kernel_target_cv_indices[cv_idx] = kernel_idx
+
+        current_kernel = KERNEL_REGISTRY[kernel_type].from_config(**kernel_dict["parameters"])
+        all_kernels.append(current_kernel)
+
+    # Check against unassigned CVs
+    kernelless_cvs = [
+        position for position, cv_idx in enumerate(kernel_target_cv_indices)
+        if cv_idx is None
+    ]
+    if len(kernelless_cvs) > 0:
+        raise DeserializationException(
+            "No kernels were found for some of the collective variables! "
+            "The config file should provide a kernel for all CVs! "
+        )
+
+    # Create the metadynamics run objects
+    unbiased_calculator = TBLite(
+        max_iterations=1000,
+        accuracy=1.0,
+        verbosity=0
+    )
+    engine = MetaDynamicsEngine(
+        mapper=merged_cvs,
+        additional_potential=merged_pef,
+        kernels=all_kernels,
+        kernel_indices=torch.tensor(kernel_target_cv_indices, dtype=torch.int),
+        kernel_height=0.05
+    )
+    ase_mol.calc = MetaDynamicsCalculator(
+        unbiased_calculator=unbiased_calculator,
+        engine=engine
+    )
 
     return
 

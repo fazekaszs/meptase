@@ -21,6 +21,23 @@
       "parameters": { "name": "theta", "indices": [[1, 2, 3, 4]] }
     }
   ],
+  "kernels": [
+    {
+      "type": "gaussian",
+      "target_cvs": ["d.1", "d.2"],
+      "parameters": { "width": 0.2 }
+    },
+    {
+      "type": "beta",
+      "target_cvs": ["alpha.1", "alpha.2"],
+      "parameters": { "width": 0.15 }
+    },
+    {
+      "type": "von_mises",
+      "target_cvs": ["theta.1"],
+      "parameters": { "width": 0.15 }
+    }
+  ],
   "additional_potentials": [
     {
       "type": "flat_bottomed_harmonic_wall",

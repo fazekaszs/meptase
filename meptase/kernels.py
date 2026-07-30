@@ -1,6 +1,7 @@
 import math
 
 from abc import ABC, abstractmethod
+from typing import Callable
 
 import torch
 
@@ -52,20 +53,41 @@ class KernelBase(ABC):
         return density
 
 
-class GaussianKernel(KernelBase):
+class DeserializableKernel(KernelBase, ABC):
 
-    def __init__(self, gaussian_width: float | torch.Tensor) -> None:
-        self.gaussian_width = gaussian_width
+    @classmethod
+    def from_config[T: KernelBase](cls: type[T], **kwargs) -> T:
+        return cls(**kwargs)
+
+
+KERNEL_REGISTRY: dict[str, type[DeserializableKernel]] = dict()
+
+
+def _register_kernel[T: DeserializableKernel](name: str) -> Callable[[type[T], ], type[T]]:
+
+    def decorator(cls: type[T]) -> type[T]:
+        KERNEL_REGISTRY[name] = cls
+        return cls
+
+    return decorator
+
+
+@_register_kernel("gaussian")
+class GaussianKernel(DeserializableKernel):
+
+    def __init__(self, width: float | torch.Tensor) -> None:
+        self.width = width
 
     def run(self, cv_history: torch.Tensor, current_cv: torch.Tensor) -> torch.Tensor:
 
         density = torch.exp(
-            - 0.5 * ((cv_history[None, :, :] - current_cv[:, None, :]) / self.gaussian_width) ** 2
+            - 0.5 * ((cv_history[None, :, :] - current_cv[:, None, :]) / self.width) ** 2
         )
         return density
 
 
-class VonMisesKernel(KernelBase):
+@_register_kernel("von_mises")
+class VonMisesKernel(DeserializableKernel):
 
     def __init__(
         self,
@@ -94,7 +116,8 @@ class VonMisesKernel(KernelBase):
         return density
 
 
-class BetaKernel(KernelBase):
+@_register_kernel("beta")
+class BetaKernel(DeserializableKernel):
 
     def __init__(
         self,

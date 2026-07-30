@@ -61,23 +61,6 @@ class DeserializablePEF(PotentialEnergyFunction, ABC):
         return cls(**kwargs)
 
 
-# We do not register this as a PEF, since it should be unavailable in the JSON runfile.
-class MergedPEF(PotentialEnergyFunction):
-    """
-    Adds the results of multiple potential energy functions.
-    """
-
-    def __init__(self, potential_energy_functions: list[PotentialEnergyFunction]):
-        super().__init__()
-        self.potential_energy_functions = potential_energy_functions
-
-    def run(self, current_cv: torch.Tensor) -> torch.Tensor:
-        return sum(
-            (pef(current_cv) for pef in self.potential_energy_functions),
-            start=torch.zeros(tuple())
-        )
-
-
 PEF_REGISTRY: dict[str, type[DeserializablePEF]] = dict()
 
 
@@ -95,6 +78,23 @@ def _register_potential[T: DeserializablePEF](name: str) -> Callable[[type[T], ]
         return cls
 
     return decorator
+
+
+# We do not register this as a PEF, since it should be unavailable in the JSON runfile.
+class MergedPEF(PotentialEnergyFunction):
+    """
+    Adds the results of multiple potential energy functions.
+    """
+
+    def __init__(self, potential_energy_functions: list[PotentialEnergyFunction]):
+        super().__init__()
+        self.potential_energy_functions = potential_energy_functions
+
+    def run(self, current_cv: torch.Tensor) -> torch.Tensor:
+        return sum(
+            (pef(current_cv) for pef in self.potential_energy_functions),
+            start=torch.zeros(tuple())
+        )
 
 
 @_register_potential("lower_harmonic_wall")
