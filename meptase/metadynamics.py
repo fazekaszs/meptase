@@ -108,7 +108,7 @@ class MetaDynamicsEngine:
             metadynamics_potentials = self.kernel_height * torch.sum(torch.prod(densities, dim=2), dim=1)
 
         else:
-            metadynamics_potentials = torch.zeros(size=(current_cv.shape[0], ))
+            metadynamics_potentials = torch.zeros(size=(current_cv.shape[0], ), requires_grad=True)
 
         total_potential = additional_potential + metadynamics_potentials
 
@@ -119,7 +119,8 @@ class MetaDynamicsEngine:
             forces = -1. * torch.autograd.grad(
                 outputs=total_potential,
                 inputs=coordinates,
-                grad_outputs=torch.ones_like(total_potential)
+                grad_outputs=torch.ones_like(total_potential),
+                materialize_grads=True
             )[0]
 
         return total_potential, forces

@@ -93,7 +93,7 @@ class MergedPEF(PotentialEnergyFunction):
     def run(self, current_cv: torch.Tensor) -> torch.Tensor:
         return sum(
             (pef(current_cv) for pef in self.potential_energy_functions),
-            start=torch.zeros(tuple())
+            start=torch.zeros(tuple(), requires_grad=True, )
         )
 
 
