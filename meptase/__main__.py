@@ -4,13 +4,21 @@ import os
 from pathlib import Path
 from argparse import ArgumentParser, Namespace
 
+import numpy as np
+
 from rdkit import Chem
 from rdkit.Chem import AllChem, Draw
 
 import ase
+from ase import units
+from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
+from ase.md.langevin import Langevin
+from ase.constraints import FixBondLengths
+from ase.io.trajectory import Trajectory
+from ase.io import read as ase_read
+from ase.io import write as ase_write
 
 import torch
-from tblite.ase import TBLite
 
 from .exceptions import (
     InvalidTypeSelectionException, DeserializationException
@@ -22,6 +30,7 @@ from .additional_potentials import (
     PEF_REGISTRY, DeserializablePEF, MergedPEF
 )
 from .kernels import KERNEL_REGISTRY
+from .calculators import CALCULATOR_REGISTRY
 from .metadynamics import MetaDynamicsEngine, MetaDynamicsCalculator
 
 
@@ -108,6 +117,29 @@ def create_molecule(smiles: str, output_dir: Path) -> tuple[Chem.Mol, ase.Atoms,
     print("ASE Atoms object successfully created!")
 
     return rdkit_mol, ase_mol, selected_atom_id_to_idx
+
+
+def create_xh_bond_constraint(ase_mol: ase.Atoms, rdkit_mol: Chem.Mol) -> FixBondLengths:
+
+    positions = ase_mol.get_positions()
+    element_symbols = ase_mol.get_chemical_symbols()
+
+    idx_pairs = list()
+    bond_lengths = list()
+    for bond in rdkit_mol.GetBonds():
+
+        atom1_idx = bond.GetBeginAtomIdx()
+        atom2_idx = bond.GetEndAtomIdx()
+
+        if "H" not in {element_symbols[atom1_idx], element_symbols[atom2_idx]}:
+            continue
+
+        distance = np.sqrt(np.sum((positions[atom1_idx] - positions[atom2_idx]) ** 2))
+
+        idx_pairs.append((atom1_idx, atom2_idx))
+        bond_lengths.append(distance)
+
+    return FixBondLengths(idx_pairs, bondlengths=bond_lengths)
 
 
 def test_cv_mappers(ase_mol: ase.Atoms, cv_mappers: list[DeserializableCV]) -> None:
@@ -245,25 +277,64 @@ def main():
             "The config file should provide a kernel for all CVs! "
         )
 
+    # Deserialize the unbiased calculator from the JSON file
+    calc_dict = input_file_content["unbiased_calculator"]
+
+    calc_type = calc_dict["type"]
+    if calc_type not in CALCULATOR_REGISTRY:
+        raise InvalidTypeSelectionException(
+            f"The calculator type {calc_type} is not registered!"
+        )
+    unbiased_calculator = CALCULATOR_REGISTRY[calc_type](**calc_dict["parameters"])
+
+    # Parse the run control parameters from the JSON file
+    run_control = input_file_content["run_control"]
+    temperature = run_control["temperature"]
+    timestep = run_control["timestep"]
+    friction = run_control["friction"]
+    steps_between_hills = run_control["steps_between_hills"]
+    n_hills = run_control["n_hills"]
+    trajectory_write_interval = run_control["trajectory_write_interval"]
+    kernel_height = run_control["kernel_height"]
+
     # Create the metadynamics run objects
-    unbiased_calculator = TBLite(
-        max_iterations=1000,
-        accuracy=1.0,
-        verbosity=0
-    )
     engine = MetaDynamicsEngine(
         mapper=merged_cvs,
         additional_potential=merged_pef,
         kernels=all_kernels,
         kernel_indices=torch.tensor(kernel_target_cv_indices, dtype=torch.int),
-        kernel_height=0.05
+        kernel_height=kernel_height
     )
     ase_mol.calc = MetaDynamicsCalculator(
         unbiased_calculator=unbiased_calculator,
         engine=engine
     )
 
-    return
+    # Constrain the X-H bonds and initialize the velocities
+    ase_mol.set_constraint(create_xh_bond_constraint(ase_mol, rdkit_mol))
+    MaxwellBoltzmannDistribution(ase_mol, temperature_K=temperature)
+
+    # Set up the trajectory writer and the Langevin dynamics
+    trajectory_path = output_dir / "output.traj"
+    ase_trajectory = Trajectory(str(trajectory_path), "w", ase_mol)
+    ase_dynamics = Langevin(
+        atoms=ase_mol,
+        timestep=timestep * units.fs,
+        temperature_K=temperature,
+        friction=friction
+    )
+    ase_dynamics.attach(ase_trajectory, interval=trajectory_write_interval)
+
+    # Run the metadynamics simulation
+    for _ in range(n_hills):
+        ase_dynamics.run(steps_between_hills)
+        ase_mol.calc.deposit_hill()
+
+        # Export the trajectory to XYZ
+        traj_buffer = ase_read(str(trajectory_path), index=":")
+        ase_write(str(output_dir / "output.xyz"), traj_buffer)
+
+    ase_trajectory.close()
 
 
 if __name__ == "__main__":

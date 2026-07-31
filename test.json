@@ -1,20 +1,23 @@
 {
   "output_dir": "test_project",
   "unbiased_calculator": {
-    "name": "TBLite",
-    "max_iterations": 1000,
-    "accuracy": 1.0,
-    "verbosity": 0
+    "type": "tblite",
+    "parameters": { "max_iterations": 1000, "accuracy": 1.0, "verbosity": 0 }
   },
   "molecule_smiles": "[CH3:1]CC[CH2:2]CC[CH2:3]CC[CH3:4]",
+  "run_control": {
+    "temperature": 310.0,
+    "timestep": 0.5,
+    "friction": 0.2,
+    "steps_between_hills": 50,
+    "n_hills": 100,
+    "trajectory_write_interval": 100,
+    "kernel_height": 0.05
+  },
   "collective_variables": [
     {
       "type": "distance",
-      "parameters": { "name": "d", "indices": [[1, 2], [2, 3]] }
-    },
-    {
-      "type": "angle",
-      "parameters": { "name": "alpha", "indices": [[1, 2, 3], [2, 3, 4]] }
+      "parameters": { "name": "d", "indices": [[1, 4]] }
     },
     {
       "type": "dihedral",
@@ -24,13 +27,8 @@
   "kernels": [
     {
       "type": "gaussian",
-      "target_cvs": ["d.1", "d.2"],
+      "target_cvs": ["d.1"],
       "parameters": { "width": 0.2 }
-    },
-    {
-      "type": "beta",
-      "target_cvs": ["alpha.1", "alpha.2"],
-      "parameters": { "width": 0.15 }
     },
     {
       "type": "von_mises",
@@ -38,16 +36,5 @@
       "parameters": { "width": 0.15 }
     }
   ],
-  "additional_potentials": [
-    {
-      "type": "flat_bottomed_harmonic_wall",
-      "target_cvs": ["d.1", "d.2"],
-      "parameters": { "cv_min": 4.0, "cv_max": 6.0, "force_constant": 5.0 }
-    },
-    {
-      "type": "upper_harmonic_wall",
-      "target_cvs": ["alpha.1"],
-      "parameters": { "cv_max": 2.0, "force_constant": 10.0 }
-    }
-  ]
+  "additional_potentials": []
 }
