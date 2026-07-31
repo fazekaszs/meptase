@@ -10,9 +10,9 @@
     "timestep": 0.5,
     "friction": 0.2,
     "steps_between_hills": 50,
-    "n_hills": 100,
+    "n_hills": 500,
     "trajectory_write_interval": 100,
-    "kernel_height": 0.05
+    "kernel_height": 0.1
   },
   "collective_variables": [
     {

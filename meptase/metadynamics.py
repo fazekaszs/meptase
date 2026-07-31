@@ -1,5 +1,6 @@
 from typing import Callable
 
+import numpy as np
 import torch
 
 import ase
@@ -185,8 +186,33 @@ class MetaDynamicsCalculator(Calculator):
         atom_positions = torch.tensor(positions_np, dtype=torch.float32)
         self.engine.deposit_hill(atom_positions)
 
+        self.calculate()
         current_cv = self.engine.history[-1].numpy()
-        print(f"Deposited Gaussian hill at CV = {current_cv}. Total hills: {len(self.engine.history)}")
+
+        # Create statistics about bias forces
+        bias_forces_size = np.sqrt(np.sum(self.results["bias_forces"] ** 2, axis=1))
+        mean_bias_force = np.mean(bias_forces_size)
+        max_bias_force_idx = np.argmax(bias_forces_size)
+        max_bias_force_atom = atoms[max_bias_force_idx].symbol + str(max_bias_force_idx)
+        max_bias_force_size = bias_forces_size[max_bias_force_idx]
+
+        # Create statistics about forces
+        forces_size = np.sqrt(np.sum(self.results["forces"] ** 2, axis=1))
+        mean_force = np.mean(forces_size)
+        max_force_idx = np.argmax(forces_size)
+        max_force_atom = atoms[max_force_idx].symbol + str(max_force_idx)
+        max_force_size = forces_size[max_force_idx]
+
+        print(
+            f"Deposited Gaussian hill at CV = {current_cv}.\n"
+            f"    - Total hills: {len(self.engine.history)}.\n"
+            f"    - Bias potential: {self.results['bias_potential']:.5} eV.\n"
+            f"    - Total potential: {self.results['energy']:.5} eV.\n"
+            f"    - Mean bias force: {mean_bias_force:.5} eV/A.\n"
+            f"    - Max bias force: {max_bias_force_size:.5} eV/A (at atom {max_bias_force_atom}).\n"
+            f"    - Mean force: {mean_force:.5} eV/A.\n"
+            f"    - Max force: {max_force_size:.5} eV/A (at atom {max_force_atom})."
+        )
 
     def get_fes(self):
 

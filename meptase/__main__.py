@@ -330,11 +330,11 @@ def main():
         ase_dynamics.run(steps_between_hills)
         ase_mol.calc.deposit_hill()
 
-        # Export the trajectory to XYZ
-        traj_buffer = ase_read(str(trajectory_path), index=":")
-        ase_write(str(output_dir / "output.xyz"), traj_buffer)
-
     ase_trajectory.close()
+
+    # Export the trajectory to XYZ
+    traj_buffer = ase_read(str(trajectory_path), index=":")
+    ase_write(str(output_dir / "output.xyz"), traj_buffer)
 
 
 if __name__ == "__main__":
