@@ -1,0 +1,35 @@
+{
+  "output_dir": "test_dialanine",
+  "unbiased_calculator": {
+    "type": "tblite",
+    "parameters": { "max_iterations": 1000, "accuracy": 1.0, "verbosity": 0 }
+  },
+  "molecule_smiles": "CC(=O)[NH:1][C@@H:2](C)[C:3](=O)[NH:4][C@@H:5](C)[C:6](=O)NC",
+  "run_control": {
+    "temperature": 310.0,
+    "timestep": 0.5,
+    "friction": 0.2,
+    "steps_between_hills": 50,
+    "n_hills": 500,
+    "trajectory_write_interval": 100,
+    "kernel_height": 0.1
+  },
+  "collective_variables": [
+    {
+      "type": "dihedral",
+      "parameters": { "name": "phi", "indices": [[1, 2, 3, 4]] }
+    },
+    {
+      "type": "dihedral",
+      "parameters": { "name": "psi", "indices": [[3, 4, 5, 6]] }
+    }
+  ],
+  "kernels": [
+    {
+      "type": "von_mises",
+      "target_cvs": ["phi.1", "psi.1"],
+      "parameters": { "width": 0.15 }
+    }
+  ],
+  "additional_potentials": []
+}

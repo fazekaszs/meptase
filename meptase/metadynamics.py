@@ -23,6 +23,33 @@ class MetaDynamicsEngine:
         kernel_indices: torch.Tensor,
         kernel_height: float
     ):
+        """
+        Creates a metadynamics engine, suitable for an ASE metadynamics calculator.
+        This manages the calculation of collective variables, kernel densities, additional potentials,
+            bias forces, etc., as well as hill deposition in its history field.
+
+        :param mapper: A callable that maps 2D tensors of shape (N_atoms, 3) to 1D tensors of shape (N_CVs, ).
+            This callable is responsible for the collective variable calculation.
+            It is possible to achieve this using subclasses of CVBase or by writing your own callable.
+            The callable must be differentiable (use PyTorch).
+            Use the MergeCV subclass, if the collection of many different CV types are needed.
+        :param additional_potential: Another callable, mapping CV vectors to potential energies.
+            Use instances of PotentialEnergyFunction subclasses or write your own function.
+            Again, the callable must be differentiable (use PyTorch).
+            The potential energy is measured in eVs.
+        :param kernels: A list of KernelBase subclass instances.
+            These map pairs of CV collections (batches of CVs and a CV history tensor)
+            to a 3D tensor of CV densities.
+            Namely, if the batches of CVs tensor has shape of (N_batches, N_CVs) and the history tensor
+            (N_timesteps, N_CVs), then the resulting density tensor should have a shape of
+            (N_batches, N_timesteps, N_CVs).
+            The final density of a batch is calculated as the product along the third dimension and then
+            as the sum along the second dimension.
+            Different types of CVs may need different kernels, that's why a list of them can be given.
+        :param kernel_indices: An indexing tensor of shape (N_CVs, ), mapping every CV to a kernel index
+            given in the kernels parameter.
+        :param kernel_height: The maximum height of the kernel product. Given in eVs.
+        """
 
         self.mapper = mapper
         self.additional_potential = additional_potential
@@ -32,20 +59,11 @@ class MetaDynamicsEngine:
 
         self.history: None | torch.Tensor = None
 
-    def deposit_hill(self, coordinates: torch.Tensor) -> None:
-
-        current_cv = self.mapper(coordinates)
-
-        if self.history is None:
-            self.history = current_cv[None, :]
-        else:
-            self.history = torch.concat([self.history, current_cv[None, :]], dim=0)
-
-    def get_energies_and_forces(
+    def _construct_coordinates_and_cv(
         self,
         coordinates: torch.Tensor | None,
         current_cv: torch.Tensor | None = None
-    ) -> tuple[torch.Tensor, torch.Tensor | None]:
+    ):
 
         # Shape checks and argument control flow...
         # The coordinates argument is given, while current_cv is not set:
@@ -85,23 +103,26 @@ class MetaDynamicsEngine:
         # After the control blocks current_cv is guaranteed to be not None
         # and has to have a shape of (N_batches, N_CVs)!
 
-        # The additional potential is calculated for all batches, resulting in a shape of (N_batches, ).
-        additional_potential = torch.vmap(self.additional_potential)(current_cv)
+        return coordinates, current_cv
+
+    def _calculate_metadynamics_potential(self, current_cv: torch.Tensor) -> torch.Tensor:
 
         # History existence check.
         if self.history is not None:
 
-            densities = torch.zeros((current_cv.shape[0], *self.history.shape))  # (N_batches, N_timesteps, N_CVs)
+            # The shape of the densities tensor: (N_batches, N_timesteps, N_CVs)
+            densities = torch.zeros((current_cv.shape[0], *self.history.shape))
             for kernel_idx, kernel in enumerate(self.kernels):
 
-                mask = kernel_idx == self.kernel_indices
+                mask = torch.eq(self.kernel_indices, kernel_idx)
                 if not torch.any(mask):
                     raise UnusedKernelException(
-                        f"The kernel named {type(self.kernels[kernel_idx])} at index {kernel_idx} is not "
-                        f"used for any of the CVs!"
+                        f"The kernel named {type(self.kernels[kernel_idx])} "
+                        f"at index {kernel_idx} is not used for any of the CVs!"
                     )
 
-                densities[:, :, mask] = densities[:, :, mask] + kernel(self.history[:, mask], current_cv[:, mask])
+                kernel_evaluation = kernel(self.history[:, mask], current_cv[:, mask])
+                densities[:, :, mask] = densities[:, :, mask] + kernel_evaluation
 
             # The final density is the product of all densities along the axis with size N_CVs,
             # and then the sum of these along the axis with size N_timesteps.
@@ -109,9 +130,73 @@ class MetaDynamicsEngine:
             metadynamics_potentials = self.kernel_height * torch.sum(torch.prod(densities, dim=2), dim=1)
 
         else:
-            metadynamics_potentials = torch.zeros(size=(current_cv.shape[0], ), requires_grad=True)
+            metadynamics_potentials = torch.zeros(size=(current_cv.shape[0],), requires_grad=True)
+
+        return metadynamics_potentials
+
+    def _deposit_hill(
+        self,
+        current_cv: torch.Tensor,
+        bias_potential: torch.Tensor
+    ) -> None:
+        """
+        Deposits a hill, i.e. adds a CV vector to the CV history.
+
+        :param current_cv: The CV vector to be added to the history.
+            Note, that it should have a batched shape of (1, N_CVs)!
+        :param bias_potential: The bias potential at the current CV.
+        """
+
+        if self.history is None:
+            self.history = current_cv.clone()
+        else:
+            self.history = torch.concat([self.history, current_cv], dim=0)
+
+    def get_observables(
+        self,
+        coordinates: torch.Tensor | None,
+        current_cv: torch.Tensor | None = None,
+        deposit_hill: bool = False
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
+        """
+        Returns the current CVs, energies and forces.
+
+        :param coordinates: The coordinates at which the current CVs, energy and forces should be calculated.
+            Can have shapes of (N_atoms, 3) or (N_batches, N_atoms, 3).
+            If it is not given (i.e. None), then the current_cv arguments must not be None.
+        :param current_cv: The current CVs at which the energy and forces should be calculated.
+            Can have shapes of (N_CVs, ) or (N_batches, N_CVs, ).
+            If it is not given (i.e. None), then the coordinates arguments must not be None.
+        :param deposit_hill: Whether to place a hill in the history at the current CV vector.
+            Can only be true if a single batch of coordinates or single batch of CVs are given.
+        :return: The current CVs, the energies and the forces.
+            Forces can only be returned if the coordinates argument was set.
+            Otherwise, None is returned as forces.
+        """
+
+        coordinates, current_cv = self._construct_coordinates_and_cv(coordinates, current_cv)
+
+        # The additional potential is calculated for all batches, resulting in a shape of (N_batches, ).
+        additional_potential = torch.vmap(self.additional_potential)(current_cv)
+
+        metadynamics_potentials = self._calculate_metadynamics_potential(current_cv)
 
         total_potential = additional_potential + metadynamics_potentials
+
+        # Update the history by adding a hill, if requested.
+        # Note: detach the current_cv and metadynamics_potentials tensors
+        # from the computational graph, since we want the history to be gradientless!
+        if deposit_hill and current_cv.shape[0] == 1:
+            self._deposit_hill(
+                current_cv.detach(),
+                metadynamics_potentials.detach()
+            )
+        elif deposit_hill and current_cv.shape[0] != 1:
+            raise InvalidParameterCombinationException(
+                f"A hill deposition is requested, but a batch of current CVs is given! "
+                f"A CV vector can only be registered in the history if the batch size is 1. "
+                f"Instead, a batch size of {current_cv.shape[0]} was detected!"
+            )
 
         # If the coordinates were not given, we cannot calculate forces!
         if coordinates is None:
@@ -124,13 +209,13 @@ class MetaDynamicsEngine:
                 materialize_grads=True
             )[0]
 
-        return total_potential, forces
+        return current_cv, total_potential, forces
 
 
 class MetaDynamicsCalculator(Calculator):
 
     implemented_properties = [
-        "energy", "bias_potential", "forces", "bias_forces"
+        "collective_variables", "energy", "bias_potential", "forces", "bias_forces"
     ]
 
     def __init__(
@@ -153,7 +238,8 @@ class MetaDynamicsCalculator(Calculator):
         self,
         atoms: ase.Atoms | None = None,
         properties: list[str] | None = None,
-        system_changes: list[str] = all_changes
+        system_changes: list[str] = all_changes,
+        deposit_hill: bool = False
     ) -> None:
 
         if atoms is None:
@@ -169,7 +255,12 @@ class MetaDynamicsCalculator(Calculator):
             device="cpu"
         )
 
-        bias_potential, bias_forces = self.engine.get_energies_and_forces(atom_positions)
+        current_cv, bias_potential, bias_forces = self.engine.get_observables(
+            coordinates=atom_positions,
+            deposit_hill=deposit_hill
+        )
+
+        self.results["collective_variables"] = current_cv[0].detach().numpy()
 
         self.results["bias_potential"] = float(bias_potential[0].detach().item())
         self.results["energy"] += self.results["bias_potential"]
@@ -182,12 +273,8 @@ class MetaDynamicsCalculator(Calculator):
         if atoms is None:
             atoms = self.unbiased_calculator.atoms
 
-        positions_np = atoms.get_positions()
-        atom_positions = torch.tensor(positions_np, dtype=torch.float32)
-        self.engine.deposit_hill(atom_positions)
-
-        self.calculate()
-        current_cv = self.engine.history[-1].numpy()
+        self.calculate(deposit_hill=True)
+        current_cv = self.results["collective_variables"]
 
         # Create statistics about bias forces
         bias_forces_size = np.sqrt(np.sum(self.results["bias_forces"] ** 2, axis=1))
@@ -217,8 +304,6 @@ class MetaDynamicsCalculator(Calculator):
     def get_fes(self):
 
         fes_domain = self.engine.history
-        fes_values, _ = self.engine.get_energies_and_forces(
-            coordinates=None, current_cv=fes_domain
-        )
+        _, fes_values, _ = self.engine.get_observables(coordinates=None, current_cv=fes_domain)
 
-        return fes_domain.numpy(), fes_values.detach().cpu().numpy()
+        return fes_domain.numpy(), -1. * fes_values.detach().cpu().numpy()
