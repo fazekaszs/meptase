@@ -1,5 +1,6 @@
 import json
 import os
+import pickle
 
 from pathlib import Path
 from argparse import ArgumentParser, Namespace
@@ -329,6 +330,20 @@ def main():
     for _ in range(n_hills):
         ase_dynamics.run(steps_between_hills)
         ase_mol.calc.deposit_hill()
+
+        n_calc_calls = ase_mol.calc.performance_statistics["n_observations"]
+        avg_t_unbiased = ase_mol.calc.performance_statistics["total_unbiased_runtime"] / n_calc_calls
+        avg_t_biasing = ase_mol.calc.performance_statistics["total_biasing_runtime"] / n_calc_calls
+
+        print(
+            f"-- Profiler: avg. t unbiased = {avg_t_unbiased:.5f} s, "
+            f"avg. t biasing = {avg_t_biasing:.5f} s"
+        )
+
+        fes_domain, fes = ase_mol.calc.get_fes()
+
+        with open(output_dir / "hills.pickle", "wb") as f:
+            pickle.dump((fes_domain, fes), f)
 
     ase_trajectory.close()
 

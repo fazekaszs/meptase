@@ -1,3 +1,4 @@
+import time
 from typing import Callable
 
 import numpy as np
@@ -231,6 +232,12 @@ class MetaDynamicsCalculator(Calculator):
         self.unbiased_calculator = unbiased_calculator
         self.engine = engine
 
+        self.performance_statistics = {
+            "total_unbiased_runtime": 0.0,
+            "total_biasing_runtime": 0.0,
+            "n_observations": 0,
+        }
+
     def set_atoms(self, atoms: ase.Atoms) -> None:
         self.unbiased_calculator.atoms = atoms
 
@@ -245,8 +252,10 @@ class MetaDynamicsCalculator(Calculator):
         if atoms is None:
             atoms = self.unbiased_calculator.atoms
 
+        unbiased_start = time.perf_counter()
         self.unbiased_calculator.calculate(atoms, properties, system_changes)
         self.results = self.unbiased_calculator.results
+        self.performance_statistics["total_unbiased_runtime"] += time.perf_counter() - unbiased_start
 
         atom_positions = torch.tensor(
             atoms.get_positions(),
@@ -255,10 +264,14 @@ class MetaDynamicsCalculator(Calculator):
             device="cpu"
         )
 
+        biasing_start = time.perf_counter()
         current_cv, bias_potential, bias_forces = self.engine.get_observables(
             coordinates=atom_positions,
             deposit_hill=deposit_hill
         )
+        self.performance_statistics["total_biasing_runtime"] += time.perf_counter() - biasing_start
+
+        self.performance_statistics["n_observations"] += 1
 
         self.results["collective_variables"] = current_cv[0].detach().numpy()
 
