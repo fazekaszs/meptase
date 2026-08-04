@@ -1,38 +1,33 @@
 {
-  "output_dir": "test_project",
+  "output_dir": "test_alanine",
   "unbiased_calculator": {
     "type": "tblite",
     "parameters": { "max_iterations": 1000, "accuracy": 1.0, "verbosity": 0 }
   },
-  "molecule_smiles": "[CH3:1]CC[CH2:2]CC[CH2:3]CC[CH3:4]",
+  "molecule_smiles": "C[C:1](=O)[NH:2][C@@H:3](C)[C:4](=O)[NH:5]C",
   "run_control": {
     "temperature": 310.0,
     "timestep": 0.5,
     "friction": 0.2,
     "steps_between_hills": 50,
-    "n_hills": 500,
+    "n_hills": 1000,
     "trajectory_write_interval": 100,
     "kernel_height": 0.1
   },
   "collective_variables": [
     {
-      "type": "distance",
-      "parameters": { "name": "d", "indices": [[1, 4]] }
+      "type": "dihedral",
+      "parameters": { "name": "phi", "indices": [[1, 2, 3, 4]] }
     },
     {
       "type": "dihedral",
-      "parameters": { "name": "theta", "indices": [[1, 2, 3, 4]] }
+      "parameters": { "name": "psi", "indices": [[2, 3, 4, 5]] }
     }
   ],
   "kernels": [
     {
-      "type": "gaussian",
-      "target_cvs": ["d.1"],
-      "parameters": { "width": 0.2 }
-    },
-    {
       "type": "von_mises",
-      "target_cvs": ["theta.1"],
+      "target_cvs": ["phi.1", "psi.1"],
       "parameters": { "width": 0.15 }
     }
   ],

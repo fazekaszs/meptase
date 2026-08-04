@@ -1,0 +1,40 @@
+{
+  "output_dir": "test_decane",
+  "unbiased_calculator": {
+    "type": "tblite",
+    "parameters": { "max_iterations": 1000, "accuracy": 1.0, "verbosity": 0 }
+  },
+  "molecule_smiles": "[CH3:1]CC[CH2:2]CC[CH2:3]CC[CH3:4]",
+  "run_control": {
+    "temperature": 310.0,
+    "timestep": 0.5,
+    "friction": 0.2,
+    "steps_between_hills": 50,
+    "n_hills": 500,
+    "trajectory_write_interval": 100,
+    "kernel_height": 0.1
+  },
+  "collective_variables": [
+    {
+      "type": "distance",
+      "parameters": { "name": "d", "indices": [[1, 4]] }
+    },
+    {
+      "type": "dihedral",
+      "parameters": { "name": "theta", "indices": [[1, 2, 3, 4]] }
+    }
+  ],
+  "kernels": [
+    {
+      "type": "gaussian",
+      "target_cvs": ["d.1"],
+      "parameters": { "width": 0.2 }
+    },
+    {
+      "type": "von_mises",
+      "target_cvs": ["theta.1"],
+      "parameters": { "width": 0.15 }
+    }
+  ],
+  "additional_potentials": []
+}
