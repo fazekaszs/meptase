@@ -292,5 +292,8 @@ class DihedralCV(DeserializableCV):
         m1 = torch.linalg.cross(n1, b2_norm)
         y = torch.sum(m1 * n2, dim=1)
 
-        # Batch evaluation of atan2 returns (M, ) array containing full periodic values
-        return torch.atan2(y, x)
+        # Batch evaluation of atan2 returns (M, ) array containing full periodic values.
+        # The -1 multiplier is there to align the values with standards. Without this,
+        # for example, the N-,C-terminally protected alanine phi/psi FES exploration would
+        # result in flipped FES maps.
+        return -1. * torch.atan2(y, x)
