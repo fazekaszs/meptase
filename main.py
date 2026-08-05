@@ -171,7 +171,7 @@ def main():
         ax[0].set_ylabel("energy / eV")
 
         ax[1].cla()
-        ax[1].plot(engine.history.numpy())
+        ax[1].plot(engine.cv_history.numpy())
         ax[1].set_xlabel("frame number")
         ax[1].set_ylabel("collective variable / Angstrom")
 

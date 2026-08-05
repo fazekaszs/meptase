@@ -14,6 +14,9 @@ from .exceptions import InvalidShapeException, UnusedKernelException, InvalidPar
 type CVMapper = Callable[[torch.Tensor, ], torch.Tensor]
 
 
+BOLTZMANN_CONSTANT = 8.61733326E-05  # eV/K
+
+
 class MetaDynamicsEngine:
 
     def __init__(
@@ -22,12 +25,13 @@ class MetaDynamicsEngine:
         additional_potential: CVMapper,
         kernels: list[KernelBase],
         kernel_indices: torch.Tensor,
-        kernel_height: float
+        kernel_height: float,
+        well_tempered_temperature: float | None = None
     ):
         """
         Creates a metadynamics engine, suitable for an ASE metadynamics calculator.
         This manages the calculation of collective variables, kernel densities, additional potentials,
-            bias forces, etc., as well as hill deposition in its history field.
+            bias forces, etc., as well as hill deposition in its cv_history field.
 
         :param mapper: A callable that maps 2D tensors of shape (N_atoms, 3) to 1D tensors of shape (N_CVs, ).
             This callable is responsible for the collective variable calculation.
@@ -41,7 +45,7 @@ class MetaDynamicsEngine:
         :param kernels: A list of KernelBase subclass instances.
             These map pairs of CV collections (batches of CVs and a CV history tensor)
             to a 3D tensor of CV densities.
-            Namely, if the batches of CVs tensor has shape of (N_batches, N_CVs) and the history tensor
+            Namely, if the batches of CVs tensor has shape of (N_batches, N_CVs) and the cv_history tensor
             (N_timesteps, N_CVs), then the resulting density tensor should have a shape of
             (N_batches, N_timesteps, N_CVs).
             The final density of a batch is calculated as the product along the third dimension and then
@@ -50,6 +54,13 @@ class MetaDynamicsEngine:
         :param kernel_indices: An indexing tensor of shape (N_CVs, ), mapping every CV to a kernel index
             given in the kernels parameter.
         :param kernel_height: The maximum height of the kernel product. Given in eVs.
+            If the well_tempered_temperature parameter is set (not None), then it is the energy multiplier
+            before the exponential in the sample weight calculation.
+        :param well_tempered_temperature: Whether to perform well tempered metadynamics and what biasing
+            temperature to use, if so. In well tempered metadynamics the sample weights in the kernel density
+            estimator biasing potential is not constant, but rather dependent on the bias potential already
+            placed. Larger temperature factors result in more exploration and slower convergence. Given in K.
+            Leave it as None if there is no need for well tempered metadynamics.
         """
 
         self.mapper = mapper
@@ -57,8 +68,13 @@ class MetaDynamicsEngine:
         self.kernels = kernels
         self.kernel_indices = kernel_indices
         self.kernel_height = kernel_height
+        self.well_tempered_temperature = well_tempered_temperature
 
-        self.history: None | torch.Tensor = None
+        self.cv_history: None | torch.Tensor = None
+
+        # This is only needed in case of well tempered metadynamics.
+        # This is the bias potential-dependent kernel weight.
+        self.wt_metad_weight_history: None | torch.Tensor = None
 
     def _construct_coordinates_and_cv(
         self,
@@ -109,10 +125,10 @@ class MetaDynamicsEngine:
     def _calculate_metadynamics_potential(self, current_cv: torch.Tensor) -> torch.Tensor:
 
         # History existence check.
-        if self.history is not None:
+        if self.cv_history is not None:
 
             # The shape of the densities tensor: (N_batches, N_timesteps, N_CVs)
-            densities = torch.zeros((current_cv.shape[0], *self.history.shape))
+            densities = torch.zeros((current_cv.shape[0], *self.cv_history.shape))
             for kernel_idx, kernel in enumerate(self.kernels):
 
                 mask = torch.eq(self.kernel_indices, kernel_idx)
@@ -122,13 +138,20 @@ class MetaDynamicsEngine:
                         f"at index {kernel_idx} is not used for any of the CVs!"
                     )
 
-                kernel_evaluation = kernel(self.history[:, mask], current_cv[:, mask])
+                kernel_evaluation = kernel(self.cv_history[:, mask], current_cv[:, mask])
                 densities[:, :, mask] = densities[:, :, mask] + kernel_evaluation
 
             # The final density is the product of all densities along the axis with size N_CVs,
             # and then the sum of these along the axis with size N_timesteps.
+            # The sum is weighted in the case of well tempered metadynamics.
             # It will have a shape of (N_batches, ).
-            metadynamics_potentials = self.kernel_height * torch.sum(torch.prod(densities, dim=2), dim=1)
+            if self.wt_metad_weight_history is None:
+                metadynamics_potentials = self.kernel_height * torch.sum(torch.prod(densities, dim=2), dim=1)
+            else:
+                metadynamics_potentials = torch.sum(
+                    self.wt_metad_weight_history * torch.prod(densities, dim=2),
+                    dim=1
+                )
 
         else:
             metadynamics_potentials = torch.zeros(size=(current_cv.shape[0],), requires_grad=True)
@@ -143,15 +166,35 @@ class MetaDynamicsEngine:
         """
         Deposits a hill, i.e. adds a CV vector to the CV history.
 
-        :param current_cv: The CV vector to be added to the history.
+        :param current_cv: The CV vector to be added to the CV history.
             Note, that it should have a batched shape of (1, N_CVs)!
         :param bias_potential: The bias potential at the current CV.
+            Only used if well tempered metadynamics is performed.
+            Note, that it should have a batched shape of (1, )!
         """
 
-        if self.history is None:
-            self.history = current_cv.clone()
+        simulation_start = self.cv_history is None
+        wt_metad_on = self.wt_metad_weight_history is not None
+
+        if simulation_start:
+            self.cv_history = current_cv.clone()
         else:
-            self.history = torch.concat([self.history, current_cv], dim=0)
+            self.cv_history = torch.concat([self.cv_history, current_cv], dim=0)
+
+        if wt_metad_on:
+
+            current_weight = self.kernel_height * torch.exp(
+                - bias_potential / (self.well_tempered_temperature * BOLTZMANN_CONSTANT)
+            )
+
+            if simulation_start:
+                self.wt_metad_weight_history = current_weight.clone()
+            else:
+                self.wt_metad_weight_history = torch.concat(
+                    [self.wt_metad_weight_history, current_weight],
+                    dim=0
+                )
+
 
     def get_observables(
         self,
@@ -168,7 +211,7 @@ class MetaDynamicsEngine:
         :param current_cv: The current CVs at which the energy and forces should be calculated.
             Can have shapes of (N_CVs, ) or (N_batches, N_CVs, ).
             If it is not given (i.e. None), then the coordinates arguments must not be None.
-        :param deposit_hill: Whether to place a hill in the history at the current CV vector.
+        :param deposit_hill: Whether to place a hill in the CV history at the current CV vector.
             Can only be true if a single batch of coordinates or single batch of CVs are given.
         :return: The current CVs, the energies and the forces.
             Forces can only be returned if the coordinates argument was set.
@@ -184,7 +227,7 @@ class MetaDynamicsEngine:
 
         total_potential = additional_potential + metadynamics_potentials
 
-        # Update the history by adding a hill, if requested.
+        # Update the CV history by adding a hill, if requested.
         # Note: detach the current_cv and metadynamics_potentials tensors
         # from the computational graph, since we want the history to be gradientless!
         if deposit_hill and current_cv.shape[0] == 1:
@@ -195,7 +238,7 @@ class MetaDynamicsEngine:
         elif deposit_hill and current_cv.shape[0] != 1:
             raise InvalidParameterCombinationException(
                 f"A hill deposition is requested, but a batch of current CVs is given! "
-                f"A CV vector can only be registered in the history if the batch size is 1. "
+                f"A CV vector can only be registered in the CV history if the batch size is 1. "
                 f"Instead, a batch size of {current_cv.shape[0]} was detected!"
             )
 
@@ -305,7 +348,7 @@ class MetaDynamicsCalculator(Calculator):
 
         print(
             f"Deposited Gaussian hill at CV = {current_cv}.\n"
-            f"    - Total hills: {len(self.engine.history)}.\n"
+            f"    - Total hills: {len(self.engine.cv_history)}.\n"
             f"    - Bias potential: {self.results['bias_potential']:.5} eV.\n"
             f"    - Total potential: {self.results['energy']:.5} eV.\n"
             f"    - Mean bias force: {mean_bias_force:.5} eV/A.\n"
@@ -316,7 +359,7 @@ class MetaDynamicsCalculator(Calculator):
 
     def get_fes(self):
 
-        fes_domain = self.engine.history
+        fes_domain = self.engine.cv_history
         _, fes_values, _ = self.engine.get_observables(coordinates=None, current_cv=fes_domain)
 
         return fes_domain.numpy(), -1. * fes_values.detach().cpu().numpy()
