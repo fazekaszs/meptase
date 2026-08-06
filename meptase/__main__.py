@@ -21,18 +21,14 @@ from ase.io import write as ase_write
 
 import torch
 
-from .exceptions import (
-    InvalidTypeSelectionException, DeserializationException
-)
-from .collective_variables import (
-    MergeCV, CV_REGISTRY, DeserializableCV
-)
-from .additional_potentials import (
-    PEF_REGISTRY, DeserializablePEF, MergedPEF
-)
-from .kernels import KERNEL_REGISTRY
-from .calculators import CALCULATOR_REGISTRY
+from .collective_variables import MergeCV, DeserializableCV
+from .additional_potentials import DeserializablePEF, MergedPEF
 from .metadynamics import MetaDynamicsEngine, MetaDynamicsCalculator
+from .main_utils.deserialize import (
+    deserialize_cvs, deserialize_additional_potentials,
+    deserialize_kernels, deserialize_calculator,
+    deserialize_run_control
+)
 
 
 def parse_arguments() -> Namespace:
@@ -206,19 +202,10 @@ def main():
     rdkit_mol, ase_mol, selected_atom_id_to_idx = create_molecule(mol_smiles, output_dir)
 
     # Deserialize and collect the CVs from the JSON file
-    cv_mappers = list()
-    for cv_dict in input_file_content["collective_variables"]:
-
-        cv_type = cv_dict["type"]
-        if cv_type not in CV_REGISTRY:
-            raise InvalidTypeSelectionException(
-                f"The collective variable type {cv_type} is not registered!"
-            )
-
-        cv_mappers.append(CV_REGISTRY[cv_type].from_config(
-            index_mapper=selected_atom_id_to_idx,
-            **cv_dict["parameters"]
-        ))
+    cv_mappers = deserialize_cvs(
+        input_file_content["collective_variables"],
+        selected_atom_id_to_idx
+    )
 
     # Run the CVs as a test on the current coordinates
     test_cv_mappers(ase_mol, cv_mappers)
@@ -227,20 +214,10 @@ def main():
     merged_cvs = MergeCV("cv_merger", cv_mappers)
 
     # Deserialize and collect the PEFs from the JSON file
-    all_additional_potentials = list()
-    for pef_dict in input_file_content["additional_potentials"]:
-
-        pef_type = pef_dict["type"]
-        if pef_type not in PEF_REGISTRY:
-            raise InvalidTypeSelectionException(
-                f"The potential energy function type {pef_type} is not registered!"
-            )
-
-        all_additional_potentials.append(PEF_REGISTRY[pef_type].from_config(
-            names_to_idx=merged_cvs.names_to_idx,
-            cv_names=pef_dict["target_cvs"],
-            **pef_dict["parameters"]
-        ))
+    all_additional_potentials = deserialize_additional_potentials(
+        input_file_content["additional_potentials"],
+        merged_cvs
+    )
 
     # Run the PEFs as a test on the current CVs
     test_additional_potentials(ase_mol, all_additional_potentials, merged_cvs)
@@ -249,54 +226,16 @@ def main():
     merged_pef = MergedPEF(all_additional_potentials)
 
     # Deserialize and collect the kernels from the JSON file
-    all_kernels = list()
-    kernel_target_cv_indices: list[int | None] = [None for _ in merged_cvs.names_to_idx]
-    for kernel_idx, kernel_dict in enumerate(input_file_content["kernels"]):
-
-        kernel_type = kernel_dict["type"]
-        if kernel_type not in KERNEL_REGISTRY:
-            raise InvalidTypeSelectionException(
-                f"The kernel type {kernel_type} is not registered!"
-            )
-
-        current_target_cv_names = kernel_dict["target_cvs"]
-        for cv_name in current_target_cv_names:
-            cv_idx = merged_cvs.names_to_idx[cv_name]
-            kernel_target_cv_indices[cv_idx] = kernel_idx
-
-        current_kernel = KERNEL_REGISTRY[kernel_type].from_config(**kernel_dict["parameters"])
-        all_kernels.append(current_kernel)
-
-    # Check against unassigned CVs
-    kernelless_cvs = [
-        position for position, cv_idx in enumerate(kernel_target_cv_indices)
-        if cv_idx is None
-    ]
-    if len(kernelless_cvs) > 0:
-        raise DeserializationException(
-            "No kernels were found for some of the collective variables! "
-            "The config file should provide a kernel for all CVs! "
-        )
+    all_kernels, kernel_target_cv_indices = deserialize_kernels(
+        input_file_content["kernels"],
+        merged_cvs
+    )
 
     # Deserialize the unbiased calculator from the JSON file
-    calc_dict = input_file_content["unbiased_calculator"]
-
-    calc_type = calc_dict["type"]
-    if calc_type not in CALCULATOR_REGISTRY:
-        raise InvalidTypeSelectionException(
-            f"The calculator type {calc_type} is not registered!"
-        )
-    unbiased_calculator = CALCULATOR_REGISTRY[calc_type](**calc_dict["parameters"])
+    unbiased_calculator = deserialize_calculator(input_file_content["unbiased_calculator"])
 
     # Parse the run control parameters from the JSON file
-    run_control = input_file_content["run_control"]
-    temperature = run_control["temperature"]
-    timestep = run_control["timestep"]
-    friction = run_control["friction"]
-    steps_between_hills = run_control["steps_between_hills"]
-    n_hills = run_control["n_hills"]
-    trajectory_write_interval = run_control["trajectory_write_interval"]
-    kernel_height = run_control["kernel_height"]
+    run_control = deserialize_run_control(input_file_content["run_control"])
 
     # Create the metadynamics run objects
     engine = MetaDynamicsEngine(
@@ -304,7 +243,7 @@ def main():
         additional_potential=merged_pef,
         kernels=all_kernels,
         kernel_indices=torch.tensor(kernel_target_cv_indices, dtype=torch.int),
-        kernel_height=kernel_height
+        kernel_height=run_control.kernel_height
     )
     ase_mol.calc = MetaDynamicsCalculator(
         unbiased_calculator=unbiased_calculator,
@@ -313,22 +252,22 @@ def main():
 
     # Constrain the X-H bonds and initialize the velocities
     ase_mol.set_constraint(create_xh_bond_constraint(ase_mol, rdkit_mol))
-    MaxwellBoltzmannDistribution(ase_mol, temperature_K=temperature)
+    MaxwellBoltzmannDistribution(ase_mol, temperature_K=run_control.temperature)
 
     # Set up the trajectory writer and the Langevin dynamics
     trajectory_path = output_dir / "output.traj"
     ase_trajectory = Trajectory(str(trajectory_path), "w", ase_mol)
     ase_dynamics = Langevin(
         atoms=ase_mol,
-        timestep=timestep * units.fs,
-        temperature_K=temperature,
-        friction=friction
+        timestep=run_control.timestep * units.fs,
+        temperature_K=run_control.temperature,
+        friction=run_control.friction
     )
-    ase_dynamics.attach(ase_trajectory, interval=trajectory_write_interval)
+    ase_dynamics.attach(ase_trajectory, interval=run_control.trajectory_write_interval)
 
     # Run the metadynamics simulation
-    for _ in range(n_hills):
-        ase_dynamics.run(steps_between_hills)
+    for _ in range(run_control.n_hills):
+        ase_dynamics.run(run_control.steps_between_hills)
         ase_mol.calc.deposit_hill()
 
         n_calc_calls = ase_mol.calc.performance_statistics["n_observations"]
