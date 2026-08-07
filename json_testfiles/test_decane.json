@@ -1,10 +1,15 @@
 {
-  "output_dir": "test_decane",
+  "io_control": {
+    "mol_from_smiles": "[CH3:1]CC[CH2:2]CC[CH2:3]CC[CH3:4]",
+    "mmff_optimize": true,
+    "output_dir": "test_decane",
+    "overwrite_output_dir": true,
+    "etkdvg3_seed": 1994
+  },
   "unbiased_calculator": {
     "type": "tblite",
     "parameters": { "max_iterations": 1000, "accuracy": 1.0, "verbosity": 0 }
   },
-  "molecule_smiles": "[CH3:1]CC[CH2:2]CC[CH2:3]CC[CH3:4]",
   "run_control": {
     "temperature": 310.0,
     "timestep": 0.5,

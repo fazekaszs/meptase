@@ -1,10 +1,15 @@
 {
-  "output_dir": "test_alanine",
+  "io_control": {
+    "mol_from_smiles": "C[C:1](=O)[NH:2][C@@H:3](C)[C:4](=O)[NH:5]C",
+    "mmff_optimize": true,
+    "output_dir": "test_alanine",
+    "overwrite_output_dir": true,
+    "etkdvg3_seed": 1994
+  },
   "unbiased_calculator": {
     "type": "tblite",
     "parameters": { "max_iterations": 1000, "accuracy": 1.0, "verbosity": 0 }
   },
-  "molecule_smiles": "C[C:1](=O)[NH:2][C@@H:3](C)[C:4](=O)[NH:5]C",
   "run_control": {
     "temperature": 310.0,
     "timestep": 0.5,

@@ -21,6 +21,7 @@ from ase.io import write as ase_write
 
 import torch
 
+from .main_utils.io import IOControl, io_main
 from .collective_variables import MergeCV, DeserializableCV
 from .additional_potentials import DeserializablePEF, MergedPEF
 from .metadynamics import MetaDynamicsEngine, MetaDynamicsCalculator
@@ -189,17 +190,9 @@ def main():
     with open(arguments.input_file, "r") as f:
         input_file_content = json.load(f)
 
-    # Create the project directory
-    output_dir = Path(input_file_content["output_dir"])
-    if os.path.exists(output_dir):
-        raise Exception("Project directory already exists!")
-    os.mkdir(output_dir)
-
-    print(f"Project directory created at \"{output_dir}\"")
-
-    # Create the molecule from the given SMILES code
-    mol_smiles = input_file_content["molecule_smiles"]
-    rdkit_mol, ase_mol, selected_atom_id_to_idx = create_molecule(mol_smiles, output_dir)
+    # Perform input operations: read in IO config, read in the molecule and its attributes
+    io_control = IOControl(**input_file_content["io_control"])
+    rdkit_mol, ase_mol, selected_atom_id_to_idx = io_main(io_control)
 
     # Deserialize and collect the CVs from the JSON file
     cv_mappers = deserialize_cvs(
@@ -255,7 +248,7 @@ def main():
     MaxwellBoltzmannDistribution(ase_mol, temperature_K=run_control.temperature)
 
     # Set up the trajectory writer and the Langevin dynamics
-    trajectory_path = output_dir / "output.traj"
+    trajectory_path = Path(io_control.output_dir) / "output.traj"
     ase_trajectory = Trajectory(str(trajectory_path), "w", ase_mol)
     ase_dynamics = Langevin(
         atoms=ase_mol,
@@ -281,14 +274,14 @@ def main():
 
         fes_domain, fes = ase_mol.calc.get_fes()
 
-        with open(output_dir / "hills.pickle", "wb") as f:
+        with open(Path(io_control.output_dir) / "hills.pickle", "wb") as f:
             pickle.dump((fes_domain, fes), f)
 
     ase_trajectory.close()
 
     # Export the trajectory to XYZ
     traj_buffer = ase_read(str(trajectory_path), index=":")
-    ase_write(str(output_dir / "output.xyz"), traj_buffer)
+    ase_write(str(Path(io_control.output_dir) / "output.xyz"), traj_buffer)
 
 
 if __name__ == "__main__":
