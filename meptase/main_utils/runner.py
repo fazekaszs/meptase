@@ -1,7 +1,30 @@
+import pickle
+
 from typing import ClassVar
 from dataclasses import dataclass
+from pathlib import Path
 
+from rdkit import Chem
+
+import ase
+from ase import units
+from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
+from ase.md.langevin import Langevin
+from ase.constraints import FixBondLengths
+from ase.io.trajectory import Trajectory
+from ase.io import read as ase_read
+from ase.io import write as ase_write
+
+import torch
+import numpy as np
+
+from .io import IOControl
+from ..additional_potentials import MergedPEF
+from ..collective_variables import MergeCV
 from ..exceptions import DeserializationException
+from ..kernels import DeserializableKernel
+from ..metadynamics import MetaDynamicsEngine, MetaDynamicsCalculator
+from ..calculators import Calculator
 
 
 @dataclass
@@ -32,3 +55,91 @@ class RunControl:
                     f"The field \"{field_name}\" in a RunControl object "
                     f"must be positive! Instead, it was set to be {field_value}."
                 )
+
+
+def create_xh_bond_constraint(ase_mol: ase.Atoms, rdkit_mol: Chem.Mol) -> FixBondLengths:
+
+    positions = ase_mol.get_positions()
+    element_symbols = ase_mol.get_chemical_symbols()
+
+    idx_pairs = list()
+    bond_lengths = list()
+    for bond in rdkit_mol.GetBonds():
+
+        atom1_idx = bond.GetBeginAtomIdx()
+        atom2_idx = bond.GetEndAtomIdx()
+
+        if "H" not in {element_symbols[atom1_idx], element_symbols[atom2_idx]}:
+            continue
+
+        distance = np.sqrt(np.sum((positions[atom1_idx] - positions[atom2_idx]) ** 2))
+
+        idx_pairs.append((atom1_idx, atom2_idx))
+        bond_lengths.append(distance)
+
+    return FixBondLengths(idx_pairs, bondlengths=bond_lengths)
+
+
+def runner_main(
+    ase_mol: ase.Atoms,
+    rdkit_mol: Chem.Mol,
+    merged_cvs: MergeCV,
+    merged_pef: MergedPEF,
+    all_kernels: list[DeserializableKernel],
+    unbiased_calculator: Calculator,
+    kernel_target_cv_indices: list[int],
+    run_control: RunControl,
+    io_control: IOControl
+):
+    # Create the metadynamics run objects
+    engine = MetaDynamicsEngine(
+        mapper=merged_cvs,
+        additional_potential=merged_pef,
+        kernels=all_kernels,
+        kernel_indices=torch.tensor(kernel_target_cv_indices, dtype=torch.int),
+        kernel_height=run_control.kernel_height
+    )
+    ase_mol.calc = MetaDynamicsCalculator(
+        unbiased_calculator=unbiased_calculator,
+        engine=engine
+    )
+
+    # Constrain the X-H bonds and initialize the velocities
+    ase_mol.set_constraint(create_xh_bond_constraint(ase_mol, rdkit_mol))
+    MaxwellBoltzmannDistribution(ase_mol, temperature_K=run_control.temperature)
+
+    # Set up the trajectory writer and the Langevin dynamics
+    trajectory_path = Path(io_control.output_dir) / "output.traj"
+    ase_trajectory = Trajectory(str(trajectory_path), "w", ase_mol)
+    ase_dynamics = Langevin(
+        atoms=ase_mol,
+        timestep=run_control.timestep * units.fs,
+        temperature_K=run_control.temperature,
+        friction=run_control.friction
+    )
+    ase_dynamics.attach(ase_trajectory, interval=run_control.trajectory_write_interval)
+
+    # Run the metadynamics simulation
+    for _ in range(run_control.n_hills):
+        ase_dynamics.run(run_control.steps_between_hills)
+        ase_mol.calc.deposit_hill()
+
+        n_calc_calls = ase_mol.calc.performance_statistics["n_observations"]
+        avg_t_unbiased = ase_mol.calc.performance_statistics["total_unbiased_runtime"] / n_calc_calls
+        avg_t_biasing = ase_mol.calc.performance_statistics["total_biasing_runtime"] / n_calc_calls
+
+        print(
+            f"-- Profiler: avg. t unbiased = {avg_t_unbiased:.5f} s, "
+            f"avg. t biasing = {avg_t_biasing:.5f} s"
+        )
+
+        fes_domain, fes = ase_mol.calc.get_fes()
+
+        with open(Path(io_control.output_dir) / "hills.pickle", "wb") as f:
+            pickle.dump((fes_domain, fes), f)
+
+    ase_trajectory.close()
+
+    # Export the trajectory to XYZ
+    traj_buffer = ase_read(str(trajectory_path), index=":")
+    ase_write(str(Path(io_control.output_dir) / "output.xyz"), traj_buffer)
