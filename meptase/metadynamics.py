@@ -1,4 +1,6 @@
 import time
+import logging
+
 from typing import Callable
 
 import numpy as np
@@ -15,6 +17,8 @@ type CVMapper = Callable[[torch.Tensor, ], torch.Tensor]
 
 
 BOLTZMANN_CONSTANT = 8.61733326E-05  # eV/K
+
+logger = logging.getLogger(__name__)
 
 
 class MetaDynamicsEngine:
@@ -346,7 +350,7 @@ class MetaDynamicsCalculator(Calculator):
         max_force_atom = atoms[max_force_idx].symbol + str(max_force_idx)
         max_force_size = forces_size[max_force_idx]
 
-        print(
+        logger.info(
             f"Deposited Gaussian hill at CV = {current_cv}.\n"
             f"    - Total hills: {len(self.engine.cv_history)}.\n"
             f"    - Bias potential: {self.results['bias_potential']:.5} eV.\n"
@@ -354,7 +358,7 @@ class MetaDynamicsCalculator(Calculator):
             f"    - Mean bias force: {mean_bias_force:.5} eV/A.\n"
             f"    - Max bias force: {max_bias_force_size:.5} eV/A (at atom {max_bias_force_atom}).\n"
             f"    - Mean force: {mean_force:.5} eV/A.\n"
-            f"    - Max force: {max_force_size:.5} eV/A (at atom {max_force_atom})."
+            f"    - Max force: {max_force_size:.5} eV/A (at atom {max_force_atom}).",
         )
 
     def get_fes(self):

@@ -1,4 +1,5 @@
 import json
+import logging
 
 from pathlib import Path
 from argparse import ArgumentParser, Namespace
@@ -12,10 +13,12 @@ from .main_utils.deserialize import (
     deserialize_run_control
 )
 from .main_utils.diagnostics import (
-    test_cv_mappers, test_additional_potentials,
+    cv_mappers_log, additional_potentials_log,
     rdkit_mol_log
 )
 from .main_utils.runner import runner_main
+
+logger = logging.getLogger(__name__)
 
 
 def parse_arguments() -> Namespace:
@@ -25,7 +28,27 @@ def parse_arguments() -> Namespace:
         "-in", "--input_file",
         type=Path, required=True, help="The input json file."
     )
+    parser.add_argument(
+        "-ll", "--log_level",
+        type=str, required=False, default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Sets the logging level."
+    )
     return parser.parse_args()
+
+
+def setup_logging(log_level: str) -> None:
+
+    log_formatter = logging.Formatter(
+        "[{levelname} | {name} | {asctime}] {message}",
+        style="{", datefmt="%Y-%m-%d %H:%M:%S"
+    )
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(log_formatter)
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(log_level)
+    root_logger.addHandler(console_handler)
 
 
 def main():
@@ -34,6 +57,9 @@ def main():
     arguments = parse_arguments()
     with open(arguments.input_file, "r") as f:
         input_file_content = json.load(f)
+
+    # Setup logging
+    setup_logging(arguments.log_level)
 
     # Perform input operations: read in IO config, read in the molecule and its attributes
     io_control = IOControl(**input_file_content["io_control"])
@@ -46,7 +72,7 @@ def main():
     cv_mappers = deserialize_cvs(input_file_content["collective_variables"], map_num_to_idx)
 
     # Run the CVs as a test on the current coordinates
-    test_cv_mappers(ase_mol, cv_mappers)
+    cv_mappers_log(ase_mol, cv_mappers)
 
     # Merge the CV collection to a single CV
     merged_cvs = MergeCV("cv_merger", cv_mappers)
@@ -58,7 +84,7 @@ def main():
     )
 
     # Run the PEFs as a test on the current CVs
-    test_additional_potentials(ase_mol, all_additional_potentials, merged_cvs)
+    additional_potentials_log(ase_mol, all_additional_potentials, merged_cvs)
 
     # Merge the PEFs to a single PEF
     merged_pef = MergedPEF(all_additional_potentials)

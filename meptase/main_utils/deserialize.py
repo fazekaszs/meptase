@@ -1,3 +1,5 @@
+import logging
+
 from typing import Any
 
 from ..exceptions import InvalidTypeSelectionException, DeserializationException
@@ -8,6 +10,8 @@ from ..calculators import CALCULATOR_REGISTRY, Calculator
 
 from .runner import RunControl
 from .io import IOControl
+
+logger = logging.getLogger(__name__)
 
 
 def deserialize_cvs(
@@ -20,14 +24,19 @@ def deserialize_cvs(
 
         cv_type = cv_dict["type"]
         if cv_type not in CV_REGISTRY:
-            raise InvalidTypeSelectionException(
+
+            error = InvalidTypeSelectionException(
                 f"The collective variable type {cv_type} is not registered!"
             )
+            logger.error(str(error))
+            raise error
 
         cv_mappers.append(CV_REGISTRY[cv_type].from_config(
             index_mapper=index_mapper,
             **cv_dict["parameters"]
         ))
+
+    logger.info(f"Deserialized %d CVs.", len(cv_mappers))
 
     return cv_mappers
 
@@ -42,15 +51,20 @@ def deserialize_additional_potentials(
 
         pef_type = pef_dict["type"]
         if pef_type not in PEF_REGISTRY:
-            raise InvalidTypeSelectionException(
+
+            error = InvalidTypeSelectionException(
                 f"The potential energy function type {pef_type} is not registered!"
             )
+            logger.error(str(error))
+            raise error
 
         all_additional_potentials.append(PEF_REGISTRY[pef_type].from_config(
             names_to_idx=merged_cvs.names_to_idx,
             cv_names=pef_dict["target_cvs"],
             **pef_dict["parameters"]
         ))
+
+    logger.info(f"Deserialized %d additional potentials.", len(all_additional_potentials))
 
     return all_additional_potentials
 
@@ -66,9 +80,12 @@ def deserialize_kernels(
 
         kernel_type = kernel_dict["type"]
         if kernel_type not in KERNEL_REGISTRY:
-            raise InvalidTypeSelectionException(
+
+            error = InvalidTypeSelectionException(
                 f"The kernel type {kernel_type} is not registered!"
             )
+            logger.error(str(error))
+            raise error
 
         current_target_cv_names = kernel_dict["target_cvs"]
         for cv_name in current_target_cv_names:
@@ -78,16 +95,21 @@ def deserialize_kernels(
         current_kernel = KERNEL_REGISTRY[kernel_type].from_config(**kernel_dict["parameters"])
         all_kernels.append(current_kernel)
 
+    logger.info(f"Deserialized %d kernels.", len(all_kernels))
+
     # Check against unassigned CVs
     kernelless_cvs = [
         position for position, cv_idx in enumerate(kernel_target_cv_indices)
         if cv_idx is None
     ]
     if len(kernelless_cvs) > 0:
-        raise DeserializationException(
+
+        error = DeserializationException(
             "No kernels were found for some of the collective variables! "
             "The config file should provide a kernel for all CVs! "
         )
+        logger.error(str(error))
+        raise error
 
     return all_kernels, kernel_target_cv_indices
 
@@ -98,9 +120,13 @@ def deserialize_calculator(
 
     calc_type = serialized_calculator["type"]
     if calc_type not in CALCULATOR_REGISTRY:
-        raise InvalidTypeSelectionException(
+
+        error = InvalidTypeSelectionException(
             f"The calculator type {calc_type} is not registered!"
         )
+        logger.error(str(error))
+        raise error
+
     unbiased_calculator = CALCULATOR_REGISTRY[calc_type](**serialized_calculator["parameters"])
     return unbiased_calculator
 
@@ -108,10 +134,20 @@ def deserialize_calculator(
 def deserialize_run_control(
     serialized_run_control: dict[str, Any]
 ) -> RunControl:
-    return RunControl(**serialized_run_control)
+
+    try:
+        return RunControl(**serialized_run_control)
+    except TypeError as e:
+        logger.exception("Error in run control deserialization!")
+        raise e
 
 
 def deserialize_io_control(
     serialized_io_control: dict[str, Any]
 ) -> IOControl:
-    return IOControl(**serialized_io_control)
+
+    try:
+        return IOControl(**serialized_io_control)
+    except TypeError as e:
+        logger.exception("Error in IO control deserialization!")
+        raise e

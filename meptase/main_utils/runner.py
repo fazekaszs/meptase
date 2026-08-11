@@ -1,4 +1,5 @@
 import pickle
+import logging
 
 from typing import ClassVar
 from dataclasses import dataclass
@@ -26,6 +27,8 @@ from ..kernels import DeserializableKernel
 from ..metadynamics import MetaDynamicsEngine, MetaDynamicsCalculator
 from ..calculators import Calculator
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class RunControl:
@@ -51,10 +54,13 @@ class RunControl:
         for field_name in self._positive_fields:
             field_value = getattr(self, field_name)
             if field_value <= 0:
-                raise DeserializationException(
+
+                error = DeserializationException(
                     f"The field \"{field_name}\" in a RunControl object "
                     f"must be positive! Instead, it was set to be {field_value}."
                 )
+                logger.error(str(error))
+                raise error
 
 
 def create_xh_bond_constraint(ase_mol: ase.Atoms, rdkit_mol: Chem.Mol) -> FixBondLengths:
@@ -103,6 +109,7 @@ def runner_main(
         unbiased_calculator=unbiased_calculator,
         engine=engine
     )
+    logger.info("Successful metadynamics engine and calculator setup.")
 
     # Constrain the X-H bonds and initialize the velocities
     ase_mol.set_constraint(create_xh_bond_constraint(ase_mol, rdkit_mol))
@@ -118,6 +125,11 @@ def runner_main(
         friction=run_control.friction
     )
     ase_dynamics.attach(ase_trajectory, interval=run_control.trajectory_write_interval)
+    logger.info(
+        "Trajectory will be written to \"%s\". "
+        "Langevin dynamics at %.3f K will be performed.",
+        str(trajectory_path), run_control.temperature
+    )
 
     # Run the metadynamics simulation
     for _ in range(run_control.n_hills):
@@ -128,9 +140,9 @@ def runner_main(
         avg_t_unbiased = ase_mol.calc.performance_statistics["total_unbiased_runtime"] / n_calc_calls
         avg_t_biasing = ase_mol.calc.performance_statistics["total_biasing_runtime"] / n_calc_calls
 
-        print(
-            f"-- Profiler: avg. t unbiased = {avg_t_unbiased:.5f} s, "
-            f"avg. t biasing = {avg_t_biasing:.5f} s"
+        logger.info(
+            "Profiler: avg. t unbiased = %.5f s, avg. t biasing = %.5f s",
+            avg_t_unbiased, avg_t_biasing
         )
 
         fes_domain, fes = ase_mol.calc.get_fes()
@@ -139,7 +151,9 @@ def runner_main(
             pickle.dump((fes_domain, fes), f)
 
     ase_trajectory.close()
+    logger.info("End of simulation, trajectory closed.")
 
     # Export the trajectory to XYZ
     traj_buffer = ase_read(str(trajectory_path), index=":")
     ase_write(str(Path(io_control.output_dir) / "output.xyz"), traj_buffer)
+    logger.info("Trajectory successfully converted to xyz.")
