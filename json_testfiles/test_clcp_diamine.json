@@ -1,0 +1,36 @@
+{
+  "io_control": {
+    "mol_from_smiles": "C1[C@H:1](C[NH2+]C)[C@H:2]([CH2:3][C:4](=O)[O-])[C@](Cl)(C[NH3+])C1",
+    "mmff_optimize": true,
+    "output_dir": "test_clcp_diamine",
+    "overwrite_output_dir": true,
+    "etkdvg3_seed": 1994
+  },
+  "unbiased_calculator": {
+    "type": "tblite",
+    "parameters": { "max_iterations": 1000, "accuracy": 1.0, "verbosity": 0 }
+  },
+  "run_control": {
+    "temperature": 310.0,
+    "timestep": 0.5,
+    "friction": 0.2,
+    "steps_between_hills": 50,
+    "n_hills": 1000,
+    "trajectory_write_interval": 100,
+    "kernel_height": 0.1
+  },
+  "collective_variables": [
+    {
+      "type": "dihedral",
+      "parameters": { "name": "theta", "indices": [[1, 2, 3, 4]] }
+    }
+  ],
+  "kernels": [
+    {
+      "type": "von_mises",
+      "target_cvs": ["theta.1"],
+      "parameters": { "width": 0.15 }
+    }
+  ],
+  "additional_potentials": []
+}

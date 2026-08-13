@@ -72,6 +72,27 @@ class CVBase(ABC):
 
 class DeserializableCV(CVBase, ABC):
 
+    @staticmethod
+    def _transform_index_mapper(
+        index_mapper: dict[int, int]
+    ) -> torch.Tensor:
+        """
+        Transforms an index mapper dictionary to an index mapper tensor M.
+        Then, if X is a tensor containing the indices to be mapped, then the
+        mapping can be performed as M[X], i.e. with advanced indexing.
+
+        :param index_mapper: The dictionary to be transformed.
+        :return: The tensor, with which the mapping can be carried out.
+        """
+
+        source_max = max(index_mapper.keys()) + 1
+        mapper_tensor = torch.tensor([
+            index_mapper.get(source_idx, -1)
+            for source_idx in range(source_max)
+        ], dtype=torch.long)
+
+        return mapper_tensor
+
     @classmethod
     def from_config[T: CVBase](
         cls: type[T],
@@ -92,15 +113,17 @@ class DeserializableCV(CVBase, ABC):
 
         if index_mapper is not None:
 
+            mapper_tensor = DeserializableCV._transform_index_mapper(index_mapper)
+
             if "indices" not in kwargs:
                 raise DeserializationException(
                     f"The indices argument is necessary if the index_mapper is given!"
                 )
 
-            kwargs["indices"] = torch.tensor([
-                [index_mapper[x] for x in idx_line]
-                for idx_line in kwargs["indices"]
-            ], dtype=torch.long)
+            kwargs["indices"] = mapper_tensor[torch.tensor(kwargs["indices"], dtype=torch.long)]
+
+            if torch.any(kwargs["indices"] < 0):
+                raise Exception("Unreachable!")
 
         return cls(**kwargs)
 
