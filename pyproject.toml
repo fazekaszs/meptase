@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "meptase"
+version = "2026.0a1"
+requires-python = ">=3.10"
+dependencies = [
+    "ase >= 3.27.0",
+    "torch >= 2.10.0",
+    "numpy >= 2.4.2",
+    "rdkit >= 2025.3.6",
+    "tblite",
+]
+readme = {file = "README.md", content-type = "test/markdown" }
+license = "MIT"
+license-files = ["LICENSE", ]
+authors = [
+    { name = "fazekaszs" },
+]
+description = "Metadynamics with PyTorch in the Atomic Simulation Environment"
+keywords = ["molecular dynamics", "metadynamics", "free energy", "ase", "pytorch"]
+classifiers = [
+    "Programming Language :: Python",
+    "Intended Audience :: Science/Research",
+    "Topic :: Science/Research",
+]
+
+[project.optional-dependencies]
+mace = ["mace-torch >= 0.3.15"]
+tblite = ["tblite >= 0.5.0"]
+
+[project.scripts]
+meptase = "meptase.__main__:main"
+
+[tool.setuptools]
+packages = ["meptase", "meptase.main_utils"]
