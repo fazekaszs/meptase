@@ -351,7 +351,7 @@ class MetaDynamicsCalculator(Calculator):
         max_force_size = forces_size[max_force_idx]
 
         logger.info(
-            f"Deposited Gaussian hill at CV = {current_cv}.\n"
+            f"Deposited hill at CV = {current_cv}.\n"
             f"    - Total hills: {len(self.engine.cv_history)}.\n"
             f"    - Bias potential: {self.results['bias_potential']:.5} eV.\n"
             f"    - Total potential: {self.results['energy']:.5} eV.\n"
