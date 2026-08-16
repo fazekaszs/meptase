@@ -30,6 +30,17 @@ MePTASE can be installed from the PyPI repository using `pip`:
 pip install meptase
 ```
 
+However, this command will not install any packages implementing unbiased
+calculators necessary for a metadynamics run. 
+For example; if you need to use tblite, run `pip install meptase[tblite]`,
+if you need to use MACE, run `pip install meptase[mace]`.
+These will automatically install the corresponding packages too.
+Currently, MePTASE has only been tested using these two and the JSON config
+files only support tblite and MACE.
+Theoretically, however, it would not be hard to extend MePTASE to other
+calculators as well.
+This is still a package under heavy development after all.
+
 ## Usage from JSON Config Files
 
 ### IO Control
