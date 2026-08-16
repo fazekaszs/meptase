@@ -23,7 +23,9 @@ keywords = ["molecular dynamics", "metadynamics", "free energy", "ase", "pytorch
 classifiers = [
     "Programming Language :: Python",
     "Intended Audience :: Science/Research",
-    "Topic :: Science/Research",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Physics",
 ]
 
 [project.optional-dependencies]
