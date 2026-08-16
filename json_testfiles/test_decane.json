@@ -2,7 +2,7 @@
   "io_control": {
     "mol_from_smiles": "[CH3:1]CC[CH2:2]CC[CH2:3]CC[CH3:4]",
     "mmff_optimize": true,
-    "output_dir": "test_decane",
+    "output_dir": "outputs/test_decane",
     "overwrite_output_dir": true,
     "etkdvg3_seed": 1994
   },

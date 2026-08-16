@@ -2,7 +2,7 @@
   "io_control": {
     "mol_from_smiles": "CC(=O)[NH:1][C@@H:2](C)[C:3](=O)[NH:4][C@@H:5](C)[C:6](=O)NC",
     "mmff_optimize": true,
-    "output_dir": "test_dialanine",
+    "output_dir": "outputs/test_dialanine",
     "overwrite_output_dir": true,
     "etkdvg3_seed": 1994
   },
