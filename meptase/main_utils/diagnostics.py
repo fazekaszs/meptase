@@ -4,8 +4,10 @@ import torch
 
 from rdkit import Chem
 
-from ..collective_variables import DeserializableCV, MergeCV
-from ..additional_potentials import DeserializablePEF
+from .registries.collective_variables import DeserializableCV
+from .registries.additional_potentials import DeserializablePEF
+
+from ..collective_variables import MergeCV
 
 logger = logging.getLogger(__name__)
 

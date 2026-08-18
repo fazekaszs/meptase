@@ -20,12 +20,13 @@ import torch
 import numpy as np
 
 from .io import IOControl
+from .registries.calculators import Calculator
+from .registries.kernels import DeserializableKernel
+
 from ..additional_potentials import MergedPEF
 from ..collective_variables import MergeCV
 from ..exceptions import DeserializationException
-from ..kernels import DeserializableKernel
 from ..metadynamics import MetaDynamicsEngine, MetaDynamicsCalculator
-from ..calculators import Calculator
 
 logger = logging.getLogger(__name__)
 

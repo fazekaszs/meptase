@@ -1,7 +1,6 @@
 import math
 
 from abc import ABC, abstractmethod
-from typing import Callable
 
 import torch
 
@@ -53,27 +52,7 @@ class KernelBase(ABC):
         return density
 
 
-class DeserializableKernel(KernelBase, ABC):
-
-    @classmethod
-    def from_config[T: KernelBase](cls: type[T], **kwargs) -> T:
-        return cls(**kwargs)
-
-
-KERNEL_REGISTRY: dict[str, type[DeserializableKernel]] = dict()
-
-
-def _register_kernel[T: DeserializableKernel](name: str) -> Callable[[type[T], ], type[T]]:
-
-    def decorator(cls: type[T]) -> type[T]:
-        KERNEL_REGISTRY[name] = cls
-        return cls
-
-    return decorator
-
-
-@_register_kernel("gaussian")
-class GaussianKernel(DeserializableKernel):
+class GaussianKernel(KernelBase):
 
     def __init__(self, width: float | torch.Tensor) -> None:
         self.width = width
@@ -86,8 +65,7 @@ class GaussianKernel(DeserializableKernel):
         return density
 
 
-@_register_kernel("von_mises")
-class VonMisesKernel(DeserializableKernel):
+class VonMisesKernel(KernelBase):
 
     def __init__(
         self,
@@ -116,8 +94,7 @@ class VonMisesKernel(DeserializableKernel):
         return density
 
 
-@_register_kernel("beta")
-class BetaKernel(DeserializableKernel):
+class BetaKernel(KernelBase):
 
     def __init__(
         self,

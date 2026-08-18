@@ -2,11 +2,13 @@ import logging
 
 from typing import Any
 
+from .registries.calculators import CALCULATOR_REGISTRY, Calculator
+from .registries.collective_variables import CV_REGISTRY, DeserializableCV
+from .registries.additional_potentials import PEF_REGISTRY, DeserializablePEF
+from .registries.kernels import KERNEL_REGISTRY, DeserializableKernel
+
+from ..collective_variables import MergeCV
 from ..exceptions import InvalidTypeSelectionException, DeserializationException
-from ..collective_variables import CV_REGISTRY, DeserializableCV, MergeCV
-from ..additional_potentials import PEF_REGISTRY, DeserializablePEF
-from ..kernels import KERNEL_REGISTRY, DeserializableKernel
-from ..calculators import CALCULATOR_REGISTRY, Calculator
 
 from .runner import RunControl
 from .io import IOControl
