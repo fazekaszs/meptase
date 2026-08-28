@@ -41,6 +41,10 @@ class RunControl:
         "steps_between_hills", "n_hills", "trajectory_write_interval",
     )
 
+    _optional_positive_fields: ClassVar[tuple[str, ...]] = (
+        "well_tempered_temperature",
+    )
+
     temperature: float
     timestep: float
     friction: float
@@ -49,6 +53,8 @@ class RunControl:
     steps_between_hills: int
     n_hills: int
     trajectory_write_interval: int
+
+    well_tempered_temperature: float | None = None
 
     def __post_init__(self):
 
@@ -59,6 +65,18 @@ class RunControl:
                 error = DeserializationException(
                     f"The field \"{field_name}\" in a RunControl object "
                     f"must be positive! Instead, it was set to be {field_value}."
+                )
+                logger.error(str(error))
+                raise error
+
+        for field_name in self._optional_positive_fields:
+            field_value = getattr(self, field_name)
+            if field_value is not None and field_value <= 0:
+
+                error = DeserializationException(
+                    f"The field \"{field_name}\" in a RunControl object "
+                    f"must be either positive or not set! "
+                    f"Instead, it was set to be {field_value}."
                 )
                 logger.error(str(error))
                 raise error
@@ -104,7 +122,8 @@ def runner_main(
         additional_potential=merged_pef,
         kernels=all_kernels,
         kernel_indices=torch.tensor(kernel_target_cv_indices, dtype=torch.int),
-        kernel_height=run_control.kernel_height
+        kernel_height=run_control.kernel_height,
+        well_tempered_temperature=run_control.well_tempered_temperature
     )
     ase_mol.calc = MetaDynamicsCalculator(
         unbiased_calculator=unbiased_calculator,

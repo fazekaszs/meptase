@@ -32,8 +32,10 @@ pip install meptase
 
 However, this command will not install any packages implementing unbiased
 calculators necessary for a metadynamics run. 
-For example; if you need to use tblite, run `pip install meptase[tblite]`,
-if you need to use MACE, run `pip install meptase[mace]`.
+For example; if you need to use [tblite](https://tblite.readthedocs.io/en/latest/), 
+run `pip install meptase[tblite]`,
+if you need to use [MACE](https://mace-docs.readthedocs.io/en/latest/), 
+run `pip install meptase[mace]`.
 These will automatically install the corresponding packages too.
 Currently, MePTASE has only been tested using these two and the JSON config
 files only support tblite and MACE.
@@ -41,7 +43,18 @@ Theoretically, however, it would not be hard to extend MePTASE to other
 calculators as well.
 This is still a package under heavy development after all.
 
-## Usage from JSON Config Files
+## Usage from the CLI with JSON Config Files
+
+The easiest way to test out MePTASE is to run it from the CLI after configuring
+a run using a JSON file.
+Examples for such JSON files can be found in the `json_testfiles` directory.
+Every JSON contains blocks that specify IO, molecule creation, CVs, kernels, 
+additional potentials and run parameters.
+To start a MePTASE run from the CLI, simply run the following command:
+
+```bash
+python -m meptase -in my_json_config.json
+```
 
 ### IO Control
 
@@ -199,15 +212,16 @@ The `run_control` block sets the simulation parameters of the metadynamics run
 block of this type, and all of its keys must be strictly positive. The
 following keys can be set within it:
 
-| Key                         | Type      | Restriction                 | Description                                                                                                                    |
-|-----------------------------|-----------|-----------------------------|--------------------------------------------------------------------------------------------------------------------------------|
-| `temperature`               | `number`  | Required, must be positive. | Simulation temperature in K. Used both for the Maxwell-Boltzmann initial velocity distribution and by the Langevin thermostat. |
-| `timestep`                  | `number`  | Required, must be positive. | Integration time step of the Langevin dynamics in fs.                                                                          |
-| `friction`                  | `number`  | Required, must be positive. | Friction coefficient of the Langevin thermostat (in the ASE convention, i.e. inverse time in the unit of the time step).       |
-| `kernel_height`             | `number`  | Required, must be positive. | Height of the deposited kernels (hills) in eV.                                                                                 |
-| `steps_between_hills`       | `integer` | Required, must be positive. | Number of dynamics steps between two consecutive hill depositions.                                                             |
-| `n_hills`                   | `integer` | Required, must be positive. | Total number of hills deposited during the run. The simulation ends after `n_hills * steps_between_hills` dynamics steps.      |
-| `trajectory_write_interval` | `integer` | Required, must be positive. | Number of dynamics steps between two consecutive writes to the trajectory file.                                                |
+| Key                         | Type      | Restriction                 | Description                                                                                                                                 |
+|-----------------------------|-----------|-----------------------------|---------------------------------------------------------------------------------------------------------------------------------------------|
+| `temperature`               | `number`  | Required, must be positive. | Simulation temperature in K. Used both for the Maxwell-Boltzmann initial velocity distribution and by the Langevin thermostat.              |
+| `timestep`                  | `number`  | Required, must be positive. | Integration time step of the Langevin dynamics in fs.                                                                                       |
+| `friction`                  | `number`  | Required, must be positive. | Friction coefficient of the Langevin thermostat (in the ASE convention, i.e. inverse time in the unit of the time step).                    |
+| `kernel_height`             | `number`  | Required, must be positive. | Height of the deposited kernels (hills) in eV.                                                                                              |
+| `steps_between_hills`       | `integer` | Required, must be positive. | Number of dynamics steps between two consecutive hill depositions.                                                                          |
+| `n_hills`                   | `integer` | Required, must be positive. | Total number of hills deposited during the run. The simulation ends after `n_hills * steps_between_hills` dynamics steps.                   |
+| `trajectory_write_interval` | `integer` | Required, must be positive. | Number of dynamics steps between two consecutive writes to the trajectory file.                                                             |
+| `well_tempered_temperature` | `number`  | Optional, must be positive. | If set, well tempered metadynamics will be performed. Sets the delta T parameter for dynamic hill weighting (`w(V) = exp(- V / (k * dT))`). |
 
 An example JSON Run Control block:
 

@@ -178,7 +178,7 @@ class MetaDynamicsEngine:
         """
 
         simulation_start = self.cv_history is None
-        wt_metad_on = self.wt_metad_weight_history is not None
+        wt_metad_on = self.well_tempered_temperature is not None
 
         if simulation_start:
             self.cv_history = current_cv.clone()
@@ -360,6 +360,12 @@ class MetaDynamicsCalculator(Calculator):
             f"    - Mean force: {mean_force:.5} eV/A.\n"
             f"    - Max force: {max_force_size:.5} eV/A (at atom {max_force_atom}).",
         )
+
+        if self.engine.well_tempered_temperature is not None:
+            logger.info(
+                f"Performing well tempered metadynamics! "
+                f"Hill weight: {self.engine.wt_metad_weight_history[-1]:.5f}."
+            )
 
     def get_fes(self):
 
