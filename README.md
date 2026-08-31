@@ -372,4 +372,7 @@ down-weighted based on the already accumulated bias potential.
 
 ## Highlights
 
-... TODO (example runs, screenshots)
+Here is the TBLite and MACE Phi/Psi metadynamics scan result of the N,C-protected
+alanine:
+
+<p align="middle"><img src="https://github.com/fazekaszs/meptase/blob/master/images/alanine_fes_tblite_mace.png" alt="alanine_fes_tblite_mace" width=800/></p>
