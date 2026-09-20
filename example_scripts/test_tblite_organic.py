@@ -20,8 +20,8 @@ from tblite.ase import TBLite
 from sklearn.decomposition import PCA
 
 from meptase.metadynamics import MetaDynamicsEngine, MetaDynamicsCalculator
-from meptase.kernels import GaussianKernel, BetaKernel
-from meptase.collective_variables import DistanceCV, AngleCV
+from meptase.kernels import BetaKernel
+from meptase.collective_variables import AngleCV
 from meptase.additional_potentials import FlatBottomedHarmonic
 
 
@@ -66,12 +66,12 @@ def create_molecule() -> tuple[Chem.Mol, ase.Atoms, list[int]]:
     # rdkit_mol = Chem.MolFromSmiles("C1C(=[O:1])C(C(Cl)(Cl)[OH:2])C(=O)C1")
     rdkit_mol = Chem.MolFromSmiles("[CH3:1]CC[CH2:2]CC[CH2:3]C")
     AllChem.Compute2DCoords(rdkit_mol)
-    Draw.MolToFile(rdkit_mol, "output.png")
+    Draw.MolToFile(rdkit_mol, "../output.png")
 
     rdkit_mol = Chem.AddHs(rdkit_mol)
     AllChem.EmbedMolecule(rdkit_mol, AllChem.ETKDGv3())
     AllChem.MMFFOptimizeMolecule(rdkit_mol)
-    Chem.MolToMolFile(rdkit_mol, "output.mol")
+    Chem.MolToMolFile(rdkit_mol, "../output.mol")
 
     positions = rdkit_mol.GetConformer().GetPositions()
     ase_atom_list = list()
@@ -149,7 +149,7 @@ def main():
     ase_mol.set_constraint(constraint_xh_bonds(ase_mol, rdkit_mol))
 
     MaxwellBoltzmannDistribution(ase_mol, temperature_K=310)
-    ase_trajectory = Trajectory("output.traj", "w", ase_mol)
+    ase_trajectory = Trajectory("../output.traj", "w", ase_mol)
 
     ase_dynamics = Langevin(ase_mol, 0.5 * units.fs, temperature_K=310, friction=0.2)
     ase_dynamics.attach(ase_trajectory, interval=100)
@@ -186,8 +186,8 @@ def main():
         ax[3].set_xlabel("collective variable / Angstrom")
         ax[3].set_ylabel("bias potential / eV")
 
-        traj_buffer = ase_read("output.traj", index=":")
-        ase_write("output.xyz", traj_buffer)
+        traj_buffer = ase_read("../output.traj", index=":")
+        ase_write("../output.xyz", traj_buffer)
 
         fig.savefig(f"img_trajectory/frame_{idx}.png")
 
